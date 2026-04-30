@@ -225,34 +225,6 @@ async def _fetch_description_ats(url: str) -> str | None:
                 logger.debug(f"Apple API failed for {url}: {e}")
         return None
 
-    # ── Visa: corporate.visa.com/en/jobs/{refNumber} ──
-    if _host_matches(url, "visa.com") and "/jobs/" in url:
-        ref_match = re.search(r'/jobs/(REF\w+)', url)
-        if ref_match:
-            ref_number = ref_match.group(1)
-            try:
-                api_url = f"https://search.visa.com/CAREERS/careers/job?refNumber={ref_number}"
-                async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-                    resp = await client.get(api_url, headers={"User-Agent": "Mozilla/5.0"})
-                    if resp.status_code == 200:
-                        data = json.loads(resp.text)
-                        items = data.get("jobDetails", [])
-                        if items:
-                            item = items[0]
-                            parts = []
-                            for field in ("jobDescription", "qualifications", "additionalInformation"):
-                                val = item.get(field, "")
-                                if val and len(val) > 20:
-                                    soup = BeautifulSoup(val, "html.parser")
-                                    parts.append(soup.get_text(separator="\n", strip=True))
-                            desc = "\n\n".join(parts)
-                            if len(desc) >= 50:
-                                logger.debug(f"Visa API description for {url}: {len(desc)} chars")
-                                return desc[:30_000]
-            except Exception as e:
-                logger.debug(f"Visa API failed for {url}: {e}")
-            return None
-
     # ── Uber Careers: uber.com/careers/list/{id} ──
     if "uber.com/careers/" in url.lower():
         try:
