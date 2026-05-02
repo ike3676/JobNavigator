@@ -7,10 +7,43 @@ Public:
   - match_title_expr(expr, title) — AND/OR/parens/quoted-phrase matcher
   - _validate_job(title, url) — returns None if valid, else rejection reason string
   - _apply_company_filters(jobs, company, global_title_exclude=None) — returns (kept, rejected)
+  - build_search_exclude_sets(db, search) — (global_set, search_set) for company-name dedup
   - GARBAGE_TITLES, GARBAGE_SUBSTRINGS, _LOCALE_NAMES — exported for direct use in generic fallback
 """
+import json
 import re
 from urllib.parse import urlparse
+
+
+def build_search_exclude_sets(db, search) -> tuple[set, set]:
+    """Return (global_exclude_set, search_exclude_set) of lowercased company names.
+
+    The search-level set is the union of:
+      • search.company_exclude (explicit per-search list), and
+      • every active Company's name + aliases when search.exclude_active_companies is true
+        (lets a keyword/URL search skip companies we already scrape directly).
+    """
+    from backend.models.db import Setting, Company
+
+    global_row = db.query(Setting).filter(Setting.key == "company_exclude_global").first()
+    global_list = []
+    if global_row:
+        try:
+            global_list = json.loads(global_row.value or "[]")
+        except (ValueError, TypeError):
+            global_list = []
+    global_set = {e.lower() for e in global_list if e}
+
+    search_set = {(e or "").lower() for e in (search.company_exclude or []) if e}
+    if getattr(search, "exclude_active_companies", False):
+        for c in db.query(Company).filter(Company.active == True).all():  # noqa: E712
+            if c.name:
+                search_set.add(c.name.lower())
+            for alias in (c.aliases or []):
+                if alias:
+                    search_set.add(alias.lower())
+
+    return global_set, search_set
 
 
 # ── Garbage-title filtering ─────────────────────────────────────────────────

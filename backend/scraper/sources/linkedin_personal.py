@@ -778,13 +778,11 @@ async def run(search: Search) -> dict:
                 continue
             kept_jobs.append(j)
 
-        # Company exclude (global + per-search)
+        # Company exclude (global + per-search + active companies if flag on)
         db_excl = SessionLocal()
         try:
-            from backend.scraper.sources.jobspy import get_setting_value
-            global_exclude = json.loads(get_setting_value(db_excl, "company_exclude_global", "[]"))
-            global_exclude_set = {e.lower() for e in global_exclude}
-            search_exclude_set = {e.lower() for e in (search.company_exclude or [])}
+            from backend.scraper._shared.filters import build_search_exclude_sets
+            global_exclude_set, search_exclude_set = build_search_exclude_sets(db_excl, search)
             if global_exclude_set or search_exclude_set:
                 before = len(kept_jobs)
                 kept_jobs = [

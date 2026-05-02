@@ -26,7 +26,8 @@ const DEFAULT_FORM = {
   hours_old: 24, results_wanted: 50,
   sources: ['linkedin', 'indeed', 'zip_recruiter', 'google'],
   title_include_keywords: '', title_exclude_keywords: 'intern, junior, associate',
-  company_filter: '', company_exclude: '', max_pages: 50, min_fit_score: 0,
+  company_filter: '', company_exclude: '', exclude_active_companies: false,
+  max_pages: 50, min_fit_score: 0,
   require_salary: false, auto_scoring_depth: 'off', run_interval_minutes: 0,
 }
 
@@ -60,6 +61,7 @@ export default function SearchManager() {
       title_exclude_keywords: (s.title_exclude_keywords || []).join(', '),
       company_filter: (s.company_filter || []).join(', '),
       company_exclude: (s.company_exclude || []).join(', '),
+      exclude_active_companies: !!s.exclude_active_companies,
       max_pages: s.max_pages || 50,
       min_fit_score: s.min_fit_score || 0,
       require_salary: s.require_salary || false,
@@ -75,6 +77,7 @@ export default function SearchManager() {
       title_exclude_keywords: editData.title_exclude_keywords ? editData.title_exclude_keywords.split(',').map(s => s.trim()).filter(Boolean) : [],
       company_filter: editData.company_filter ? editData.company_filter.split(',').map(s => s.trim()).filter(Boolean) : [],
       company_exclude: editData.company_exclude ? editData.company_exclude.split(',').map(s => s.trim()).filter(Boolean) : [],
+      exclude_active_companies: !!editData.exclude_active_companies,
       max_pages: parseInt(editData.max_pages) || 50,
       min_fit_score: parseInt(editData.min_fit_score) || 0,
       require_salary: editData.require_salary || false,
@@ -376,6 +379,13 @@ export default function SearchManager() {
             onChange={e => setEd({ company_exclude: e.target.value })}
             placeholder="Walmart, CommScope" className="border rounded px-2 py-1.5 text-sm w-full dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600" />
         </div>
+      </div>
+      <div className="mt-2">
+        <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
+          <input type="checkbox" checked={!!ed.exclude_active_companies}
+            onChange={e => setEd({ exclude_active_companies: e.target.checked })} />
+          Exclude all active companies (skip results we already get from Company scrapes)
+        </label>
       </div>
       <div className="mt-3 flex items-center gap-4">
         <label className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400">

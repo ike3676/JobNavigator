@@ -67,6 +67,10 @@ class Search(Base):
     require_salary = Column(Boolean, default=False)  # Filter out jobs without salary info
     auto_scoring_depth = Column(String, default="off")  # off | light | full
     run_interval_minutes = Column(Integer, default=0)
+    # When true, treat every active Company's name + aliases as additional company_exclude
+    # entries at scrape time so a keyword/URL search won't surface jobs we already get
+    # from a company-specific scrape.
+    exclude_active_companies = Column(Boolean, default=False)
     last_run_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
@@ -414,3 +418,10 @@ def create_tables():
         conn.execute(text("CREATE SEQUENCE IF NOT EXISTS jobs_short_id_seq"))
         conn.commit()
     Base.metadata.create_all(bind=engine)
+    # Idempotent column adds for tables that already existed before the column was introduced.
+    # Postgres-native; no-op on second run.
+    with engine.connect() as conn:
+        conn.execute(text(
+            "ALTER TABLE searches ADD COLUMN IF NOT EXISTS exclude_active_companies BOOLEAN DEFAULT FALSE"
+        ))
+        conn.commit()

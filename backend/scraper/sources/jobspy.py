@@ -126,12 +126,12 @@ def _run_sync(search, proxy_url: str = None) -> dict:
         )
         jobs_df = apply_company_filter(jobs_df, search.company_filter or [])
 
-        # Company exclude (global=full match, per-search=full match)
+        # Company exclude (global=full match, per-search=full match,
+        # plus active companies when search.exclude_active_companies is on)
         db_excl = SessionLocal()
         try:
-            global_exclude = json.loads(get_setting_value(db_excl, "company_exclude_global", "[]"))
-            global_exclude_set = {e.lower() for e in global_exclude}
-            search_exclude_set = {e.lower() for e in (search.company_exclude or [])}
+            from backend.scraper._shared.filters import build_search_exclude_sets
+            global_exclude_set, search_exclude_set = build_search_exclude_sets(db_excl, search)
             if (global_exclude_set or search_exclude_set) and jobs_df is not None and not jobs_df.empty:
                 before = len(jobs_df)
                 def _excl(name):

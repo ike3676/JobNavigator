@@ -33,6 +33,7 @@ class SearchCreate(BaseModel):
     title_exclude_keywords: list = ["intern", "junior", "associate"]
     company_filter: list = []
     company_exclude: list = []
+    exclude_active_companies: bool = False
     max_pages: int = 50
     min_fit_score: int = 0
     require_salary: bool = False
@@ -64,7 +65,8 @@ def update_search(search_id: str, updates: dict, db: Session = Depends(get_db)):
         "name", "active", "sources", "search_mode", "search_term", "direct_url",
         "location", "is_remote", "job_type", "hours_old", "results_wanted",
         "title_include_keywords", "title_exclude_keywords", "company_filter",
-        "company_exclude", "max_pages", "min_fit_score", "require_salary", "auto_scoring_depth", "run_interval_minutes",
+        "company_exclude", "exclude_active_companies", "max_pages", "min_fit_score",
+        "require_salary", "auto_scoring_depth", "run_interval_minutes",
     }
     for key, value in updates.items():
         if key in allowed:
@@ -249,13 +251,10 @@ async def test_search(search_id: str, db: Session = Depends(get_db)):
         cf_set = {cf.lower() for cf in company_filter}
         mask &= jobs_df["company"].str.lower().isin(cf_set)
 
-    # Company exclude (global=full match, per-search=full match)
+    # Company exclude (global + per-search + active companies if flag on)
     import json
-    global_exclude_row = db.query(Setting).filter(Setting.key == "company_exclude_global").first()
-    global_exclude = json.loads(global_exclude_row.value) if global_exclude_row and global_exclude_row.value else []
-    global_exclude_set = {e.lower() for e in global_exclude}
-    search_exclude = [e.lower() for e in (search.company_exclude or [])]
-    search_exclude_set = set(search_exclude)
+    from backend.scraper._shared.filters import build_search_exclude_sets
+    global_exclude_set, search_exclude_set = build_search_exclude_sets(db, search)
     all_exclude = list(global_exclude_set | search_exclude_set)
     if global_exclude_set or search_exclude_set:
         def _kw_excl(name):
@@ -467,14 +466,13 @@ async def _test_levelsfyi_search(search, db):
     exclude_kw = search.title_exclude_keywords or []
     company_filter = search.company_filter or []
 
-    # Company exclude (global=full match, per-search=substring)
+    # Company exclude (global + per-search + active companies if flag on)
     from backend.models.db import Setting
     import json
-    global_exclude_row = db.query(Setting).filter(Setting.key == "company_exclude_global").first()
-    global_exclude = json.loads(global_exclude_row.value) if global_exclude_row and global_exclude_row.value else []
-    global_exclude_set = {e.lower() for e in global_exclude}
-    search_exclude = [e.lower() for e in (search.company_exclude or [])]
-    all_exclude = list(global_exclude_set | set(search_exclude))
+    from backend.scraper._shared.filters import build_search_exclude_sets
+    global_exclude_set, search_exclude_set = build_search_exclude_sets(db, search)
+    search_exclude = list(search_exclude_set)
+    all_exclude = list(global_exclude_set | search_exclude_set)
 
     # Body exclusion phrases for desc check (H-1B + language)
     body_row = db.query(Setting).filter(Setting.key == "body_exclusion_phrases").first()
@@ -632,6 +630,7 @@ def _search_to_dict(s: Search) -> dict:
         "title_exclude_keywords": s.title_exclude_keywords,
         "company_filter": s.company_filter,
         "company_exclude": s.company_exclude,
+        "exclude_active_companies": bool(s.exclude_active_companies),
         "max_pages": s.max_pages,
         "min_fit_score": s.min_fit_score,
         "require_salary": s.require_salary,
