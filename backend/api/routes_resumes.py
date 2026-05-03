@@ -916,27 +916,13 @@ async def import_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)
 # ── Score Check ────────────────────────────────────────────────────────────
 
 def _resume_to_score_text(json_data: dict) -> str:
-    """Flatten a Resume.json_data into the plaintext form passed to the scorer."""
-    parts = []
-    header = json_data.get("header", {})
-    if header.get("name"):
-        parts.append(header["name"])
-    if header.get("title"):
-        parts.append(header["title"])
-    if json_data.get("summary"):
-        parts.append(json_data["summary"])
-    for exp in json_data.get("experience", []):
-        parts.append(f"{exp.get('title', '')} at {exp.get('company', '')}")
-        for b in exp.get("bullets", []):
-            parts.append(f"- {b}")
-    for edu in json_data.get("education", []):
-        parts.append(f"{edu.get('degree', '')} — {edu.get('school', '')}")
-    for sk in json_data.get("skills", []):
-        if isinstance(sk, dict):
-            parts.append(f"{sk.get('category', '')}: {sk.get('items', '')}")
-        elif isinstance(sk, str):
-            parts.append(sk)
-    return "\n".join(parts)
+    """Flatten a Resume.json_data into the plaintext form passed to the scorer.
+
+    Thin wrapper around analyzer.cv_scorer._flatten_resume so the score-check pre-check
+    and the LLM payload always agree on the canonical flatten (skills is a dict, not a list).
+    """
+    from backend.analyzer.cv_scorer import _flatten_resume
+    return _flatten_resume(json_data or {})
 
 
 async def _score_resume_impl(resume_id: str, depth: str):

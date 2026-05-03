@@ -214,6 +214,12 @@ export default function ResumeBuilder() {
         // ── score_resume runs (scope_key = "<job_id>:resume:<resume_id>") ──
         // Carry forward optimistic entries (POST replied with run_id but the monitor
         // hasn't surfaced them yet on this poll tick) so the spinner doesn't blink off.
+        // BUT only carry them forward for a short window — if the server never shows
+        // the run after ~7s, the LLM call almost certainly finished between polls
+        // (cached "Quick Score" responses can complete in <1s). Treat as finished:
+        // drop the optimistic and refresh the score panel for the selected resume.
+        const OPTIMISTIC_GRACE_MS = 7000
+        const now = Date.now()
         const scoreRows = (active || [])
           .filter(r => r.job_type === 'score_resume')
           .map(r => {
@@ -228,7 +234,17 @@ export default function ResumeBuilder() {
             }
           }).filter(s => s.resume_id)
         const scoreServerIds = new Set(scoreRows.map(s => s.run_id))
-        const scoreCarry = pendingScoresRef.current.filter(p => p._optimistic && !scoreServerIds.has(p.run_id))
+        const expiredOptimistic = []
+        const scoreCarry = pendingScoresRef.current.filter(p => {
+          if (!p._optimistic) return false
+          if (scoreServerIds.has(p.run_id)) return false
+          const startedMs = p.started_at ? new Date(p.started_at).getTime() : now
+          if (now - startedMs > OPTIMISTIC_GRACE_MS) {
+            expiredOptimistic.push(p)
+            return false
+          }
+          return true
+        })
         const scoreMerged = [...scoreRows, ...scoreCarry]
 
         if (cancelled) return
@@ -244,11 +260,16 @@ export default function ResumeBuilder() {
         if (!sameTitles) setPendingTailors(merged)
         if (finished) fetchResumes()
 
-        // Score diff: detect runs that disappeared → refresh job for selected resume
+        // Score diff: detect runs that disappeared → refresh job for selected resume.
+        // "Disappeared" = previously seen on the server (not optimistic) and now gone,
+        // OR optimistic entry that aged past the grace window (server completed faster
+        // than the poll interval).
         const prevScoreArr = pendingScoresRef.current
-        const prevScoreIds = new Set(prevScoreArr.filter(p => !p._optimistic).map(p => p.run_id))
         const nowScoreIds = new Set(scoreMerged.map(p => p.run_id))
-        const finishedScores = prevScoreArr.filter(p => !p._optimistic && !nowScoreIds.has(p.run_id))
+        const finishedScores = [
+          ...prevScoreArr.filter(p => !p._optimistic && !nowScoreIds.has(p.run_id)),
+          ...expiredOptimistic,
+        ]
         const scoreSameIds = prevScoreArr.length === scoreMerged.length &&
           scoreMerged.every((s, i) => s.run_id === prevScoreArr[i]?.run_id)
         if (!scoreSameIds) setPendingScores(scoreMerged)

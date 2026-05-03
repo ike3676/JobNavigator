@@ -57,6 +57,14 @@ async def run_search(search: Search, proxy_url: Optional[str] = None) -> dict:
             "error": "linkedin_extension has no scraper (passive via Chrome extension)",
             "duration": 0,
         }
+    if mode == "extension":
+        # No scraper — jobs come via POST /api/jobs/save-from-extension (manual Save-to-Feed button)
+        return {
+            "jobs_found": 0,
+            "new_jobs": 0,
+            "error": "extension has no scraper (manual save via Chrome extension)",
+            "duration": 0,
+        }
 
     raise ValueError(f"Unknown search_mode: {mode}")
 
@@ -139,6 +147,11 @@ async def run_all(force: bool = False):
         logger.info(f"Running {len(searches)} active searches")
 
         for search in searches:
+            # Passive-only modes (extension push endpoints) are not scheduler-driven —
+            # skip silently to keep logs clean.
+            if search.search_mode in ("linkedin_extension", "extension"):
+                continue
+
             # Per-search interval check (skipped for manual triggers)
             if not force and search.run_interval_minutes:
                 if search.last_run_at:

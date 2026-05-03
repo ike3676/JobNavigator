@@ -36,7 +36,13 @@ def build_search_exclude_sets(db, search) -> tuple[set, set]:
 
     search_set = {(e or "").lower() for e in (search.company_exclude or []) if e}
     if getattr(search, "exclude_active_companies", False):
+        # Only exclude companies that actually produce competing jobs from a Company
+        # scrape — i.e. have at least one scrape_url. An active Company with no URLs
+        # never duplicates this search's results, so excluding it would only hide
+        # legitimate keyword/URL hits.
         for c in db.query(Company).filter(Company.active == True).all():  # noqa: E712
+            if not c.scrape_urls:
+                continue
             if c.name:
                 search_set.add(c.name.lower())
             for alias in (c.aliases or []):

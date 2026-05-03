@@ -586,14 +586,24 @@ async def score_single_job(job_id: str, cv_ids: list = None, depth: str = "full"
             cv_texts = {}
             resume_ids = [c for c in cv_ids if c != _PERSONA_KEY]
             if resume_ids:
-                for r in db.query(Resume).filter(Resume.id.in_(resume_ids)).order_by(Resume.id).all():
+                resumes = db.query(Resume).filter(Resume.id.in_(resume_ids)).order_by(Resume.id).all()
+                # Single tailored (is_base=False) → label "Tailored" so the frontend's
+                # tailored-link handler picks it up and the chip stays short. Multiple
+                # tailored in one batch (rare) → fall back to Resume.name to avoid
+                # silent dict-key collision dropping all but one. Same convention as
+                # POST /resumes/{id}/score-check.
+                tailored_count = sum(1 for r in resumes if not r.is_base)
+                for r in resumes:
                     text = _flatten_resume(r.json_data or {})
-                    if text:
-                        # Tailored resumes (is_base=False) save under the literal "Tailored"
-                        # label so the frontend's tailored-link handler picks them up and the
-                        # chip stays short. Same convention as POST /resumes/{id}/score-check.
-                        label = "Tailored" if not r.is_base else r.name
-                        cv_texts[label] = text
+                    if not text:
+                        continue
+                    if r.is_base:
+                        label = r.name
+                    elif tailored_count == 1:
+                        label = "Tailored"
+                    else:
+                        label = r.name  # disambiguate; loses the short-chip nicety, but no data loss
+                    cv_texts[label] = text
             if _PERSONA_KEY in cv_ids:
                 cv_texts.update(_get_persona_text(db))
         else:

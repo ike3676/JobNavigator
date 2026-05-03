@@ -306,14 +306,17 @@ async def save_from_extension(body: dict, db: Session = Depends(get_db)):
     """Save a job from the Chrome Extension to the Job Feed (no application created).
 
     Runs the same enrichment pipeline as LinkedIn passive capture:
+      • title-include / title-exclude / company-exclude filters from the linked
+        'Extension' search (matches linkedin_extension.py behavior)
       • salary extraction
       • H-1B / body-exclusion scan (flagged jobs go to status='ignored')
-      • auto-score chain when the 'LinkedIn Extension' search has auto_scoring_depth set
+      • auto-score chain when the 'Extension' search has auto_scoring_depth set
     """
     from backend.scraper._shared.dedup import make_external_id, make_content_hash
-    from backend.analyzer.h1b_checker import check_job_h1b, determine_h1b_verdict
+    from backend.analyzer.h1b_checker import check_job_h1b
     from backend.models.db import Search
     import uuid as _uuid
+    import re as _re
 
     title = (body.get("title") or "").strip()
     company = (body.get("company") or "").strip()
@@ -321,6 +324,9 @@ async def save_from_extension(body: dict, db: Session = Depends(get_db)):
     description = (body.get("description") or "").strip() or None
     if not title or not company or not url:
         raise HTTPException(status_code=400, detail="title, company, and url are required")
+
+    # Pull the per-company H-1B median (used by salary fallback) if we know the company.
+    comp_obj = find_company_by_name(db, company)
 
     external_id = make_external_id(company, title, url)
     content_hash = make_content_hash(company, title)
@@ -334,21 +340,39 @@ async def save_from_extension(body: dict, db: Session = Depends(get_db)):
     if existing:
         if existing.status == "skip":
             existing.status = "new"
-        # Backfill description if missing
+        # Backfill description if missing — share salary fallback shape with insert path.
         if description and not existing.description:
             existing.description = description
-            apply_salary_to_job(existing)
+            apply_salary_to_job(existing, comp_obj.h1b_median_salary if comp_obj else None)
         db.commit()
         return {"id": str(existing.id), "company": existing.company, "title": existing.title, "new": False}
-
-    # Pull the per-company H-1B median (used by salary fallback) if we know the company.
-    comp_obj = find_company_by_name(db, company)
 
     # Link to the hardcoded "Extension" search (manual Save-to-Job-Feed flow).
     # The "Extension LI" search (search_mode=linkedin_extension) is reserved for the
     # passive LinkedIn-collections capture path so the two flows can have independent
     # auto-score / title-filter configs.
     ext_search = db.query(Search).filter(Search.search_mode == "extension").first()
+
+    # Apply per-search title + company filters (parity with linkedin_extension flow).
+    # Rejected jobs are still saved as 'ignored' so the dedup keys stick — this prevents
+    # the user from re-saving the same rejected job over and over.
+    filter_reject_reason = None
+    if ext_search is not None:
+        title_lower = title.lower()
+        include_kw = ext_search.title_include_keywords or []
+        exclude_kw = ext_search.title_exclude_keywords or []
+        if include_kw and not any(kw.lower() in title_lower for kw in include_kw):
+            filter_reject_reason = f"title-include miss: needed any of {include_kw}"
+        if not filter_reject_reason and exclude_kw:
+            matched = [kw for kw in exclude_kw if _re.search(r'\b' + _re.escape(kw) + r'\b', title_lower)]
+            if matched:
+                filter_reject_reason = f"title-exclude hit: {', '.join(matched)}"
+        if not filter_reject_reason:
+            company_lower = company.lower()
+            for excl in (ext_search.company_exclude or []):
+                if excl and excl.lower() == company_lower:
+                    filter_reject_reason = f"company-exclude: {excl}"
+                    break
 
     job = Job(
         external_id=external_id,
@@ -366,15 +390,18 @@ async def save_from_extension(body: dict, db: Session = Depends(get_db)):
     if description:
         apply_salary_to_job(job, comp_obj.h1b_median_salary if comp_obj else None)
 
-    # H-1B + body-exclusion scan (mirrors company_pages.py / linkedin_extension.py)
+    # H-1B + body-exclusion scan (mirrors company_pages.py / linkedin_extension.py).
+    # `check_job_h1b` already sets job.h1b_verdict; no need to recompute here.
     try:
         await check_job_h1b(job, db)
-        job.h1b_verdict = determine_h1b_verdict(job.h1b_company_lca_count, job.h1b_jd_flag)
     except Exception as e:
         logger.warning(f"save-from-extension: analysis failed for '{title}' @ '{company}': {e}")
 
-    # Skip flagged jobs to keep the feed clean (same as other scrapers)
-    if job.h1b_jd_flag:
+    # Skip flagged jobs OR jobs that hit the search-filter set.
+    if filter_reject_reason:
+        logger.info(f"save-from-extension: filtered — '{title}' @ '{company}' — {filter_reject_reason}")
+        job.status = "ignored"
+    elif job.h1b_jd_flag:
         _phrase = getattr(job, "_h1b_matched_phrase", None) or "?"
         logger.info(f"save-from-extension: skipping (body exclusion) — '{title}' @ '{company}' — phrase: {_phrase!r}")
         job.status = "ignored"

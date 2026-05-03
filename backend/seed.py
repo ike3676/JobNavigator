@@ -573,6 +573,16 @@ def seed_searches(db):
     for s in SEED_SEARCHES:
         if s["search_mode"] not in existing_modes:
             db.add(Search(**s))
+    # Idempotent rename: the linkedin_extension search was originally seeded as
+    # "LinkedIn Extension"; after the Extension/Extension-LI split it should read
+    # "Extension LI" so the UI labels match. Self-heal here so fresh DB clones
+    # (where the manual rename never ran) end up consistent.
+    legacy = db.query(Search).filter(
+        Search.search_mode == "linkedin_extension",
+        Search.name == "LinkedIn Extension",
+    ).first()
+    if legacy:
+        legacy.name = "Extension LI"
     db.commit()
 
 
