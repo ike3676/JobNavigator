@@ -302,8 +302,19 @@ def list_job_verdicts(
 
 
 @router.post("/save-from-extension")
-def save_from_extension(body: dict, db: Session = Depends(get_db)):
-    """Save a job from the Chrome Extension to the Job Feed (no application created)."""
+async def save_from_extension(body: dict, db: Session = Depends(get_db)):
+    """Save a job from the Chrome Extension to the Job Feed (no application created).
+
+    Runs the same enrichment pipeline as LinkedIn passive capture:
+      • salary extraction
+      • H-1B / body-exclusion scan (flagged jobs go to status='ignored')
+      • auto-score chain when the 'LinkedIn Extension' search has auto_scoring_depth set
+    """
+    from backend.scraper._shared.dedup import make_external_id, make_content_hash
+    from backend.analyzer.h1b_checker import check_job_h1b, determine_h1b_verdict
+    from backend.models.db import Search
+    import uuid as _uuid
+
     title = (body.get("title") or "").strip()
     company = (body.get("company") or "").strip()
     url = (body.get("url") or "").strip()
@@ -311,7 +322,6 @@ def save_from_extension(body: dict, db: Session = Depends(get_db)):
     if not title or not company or not url:
         raise HTTPException(status_code=400, detail="title, company, and url are required")
 
-    from backend.scraper._shared.dedup import make_external_id, make_content_hash
     external_id = make_external_id(company, title, url)
     content_hash = make_content_hash(company, title)
 
@@ -331,6 +341,13 @@ def save_from_extension(body: dict, db: Session = Depends(get_db)):
         db.commit()
         return {"id": str(existing.id), "company": existing.company, "title": existing.title, "new": False}
 
+    # Pull the per-company H-1B median (used by salary fallback) if we know the company.
+    comp_obj = find_company_by_name(db, company)
+
+    # Link to the hardcoded "LinkedIn Extension" search so auto-score / search-based
+    # filters apply consistently with the LinkedIn passive-capture flow.
+    ext_search = db.query(Search).filter(Search.search_mode == "linkedin_extension").first()
+
     job = Job(
         external_id=external_id,
         content_hash=content_hash,
@@ -339,14 +356,61 @@ def save_from_extension(body: dict, db: Session = Depends(get_db)):
         url=url,
         description=description,
         source="extension",
+        search_id=ext_search.id if ext_search else None,
         status="new",
     )
-    # Parse salary from description
+
+    # Salary extraction from description
     if description:
-        apply_salary_to_job(job)
+        apply_salary_to_job(job, comp_obj.h1b_median_salary if comp_obj else None)
+
+    # H-1B + body-exclusion scan (mirrors company_pages.py / linkedin_extension.py)
+    try:
+        await check_job_h1b(job, db)
+        job.h1b_verdict = determine_h1b_verdict(job.h1b_company_lca_count, job.h1b_jd_flag)
+    except Exception as e:
+        logger.warning(f"save-from-extension: analysis failed for '{title}' @ '{company}': {e}")
+
+    # Skip flagged jobs to keep the feed clean (same as other scrapers)
+    if job.h1b_jd_flag:
+        _phrase = getattr(job, "_h1b_matched_phrase", None) or "?"
+        logger.info(f"save-from-extension: skipping (body exclusion) — '{title}' @ '{company}' — phrase: {_phrase!r}")
+        job.status = "ignored"
+
     db.add(job)
     db.commit()
-    return {"id": str(job.id), "company": job.company, "title": job.title, "new": True}
+    db.refresh(job)
+
+    # Auto-score chain — fire only for kept jobs and only when the extension search
+    # opted in via auto_scoring_depth. Same pattern as the LinkedIn import endpoint.
+    if (
+        job.status == "new"
+        and ext_search is not None
+        and ext_search.auto_scoring_depth in ("light", "full")
+    ):
+        try:
+            from backend.analyzer.cv_scorer import score_single_job
+            launch_background(
+                "analyze_job",
+                score_single_job,
+                trigger="manual",
+                scope_key=f"{job.id}:extension",
+                target_job_id=_uuid.UUID(str(job.id)),
+                func_kwargs={"job_id": str(job.id), "depth": ext_search.auto_scoring_depth},
+            )
+        except JobAlreadyRunningError:
+            pass
+        except Exception as e:
+            logger.warning(f"save-from-extension: auto-score launch failed for {job.id}: {e}")
+
+    return {
+        "id": str(job.id),
+        "company": job.company,
+        "title": job.title,
+        "new": True,
+        "status": job.status,
+        "h1b_jd_flag": bool(job.h1b_jd_flag),
+    }
 
 
 @router.post("/bulk-update")
