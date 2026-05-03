@@ -1010,8 +1010,11 @@ async def score_check(resume_id: str, request_body: dict = None, db: Session = D
     job = db.query(Job).filter(Job.id == resume.job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Linked job not found")
-    if not (job.description or "").strip():
-        raise HTTPException(status_code=400, detail="Linked job has no description")
+    # Pre-check matches the worker's text-resolution: cv_scorer._get_job_text() falls
+    # back to cached_page_text (and even live page-fetch) when description is empty.
+    # Don't 400 jobs that scored fine via cache alone.
+    if not (job.description or "").strip() and not (job.cached_page_text or "").strip():
+        raise HTTPException(status_code=400, detail="Linked job has no description or cached page text")
 
     if len(_resume_to_score_text(resume.json_data or {})) < 50:
         raise HTTPException(status_code=400, detail="Resume has insufficient text for scoring")

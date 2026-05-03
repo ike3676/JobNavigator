@@ -353,18 +353,20 @@ async def save_from_extension(body: dict, db: Session = Depends(get_db)):
     # auto-score / title-filter configs.
     ext_search = db.query(Search).filter(Search.search_mode == "extension").first()
 
-    # Apply per-search title + company filters (parity with linkedin_extension flow).
+    # Apply per-search title + company filters (full parity with linkedin_extension flow):
+    # title-exclude matched case-insensitively, AND merged with global title-exclude phrases.
     # Rejected jobs are still saved as 'ignored' so the dedup keys stick — this prevents
     # the user from re-saving the same rejected job over and over.
     filter_reject_reason = None
     if ext_search is not None:
+        from backend.models.db import get_global_title_exclude
         title_lower = title.lower()
         include_kw = ext_search.title_include_keywords or []
-        exclude_kw = ext_search.title_exclude_keywords or []
+        exclude_kw = list(set((ext_search.title_exclude_keywords or []) + get_global_title_exclude(db)))
         if include_kw and not any(kw.lower() in title_lower for kw in include_kw):
             filter_reject_reason = f"title-include miss: needed any of {include_kw}"
         if not filter_reject_reason and exclude_kw:
-            matched = [kw for kw in exclude_kw if _re.search(r'\b' + _re.escape(kw) + r'\b', title_lower)]
+            matched = [kw for kw in exclude_kw if _re.search(r'\b' + _re.escape(kw) + r'\b', title, _re.IGNORECASE)]
             if matched:
                 filter_reject_reason = f"title-exclude hit: {', '.join(matched)}"
         if not filter_reject_reason:
