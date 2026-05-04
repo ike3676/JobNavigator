@@ -9,10 +9,12 @@ their dedicated modules (ats/workday, ats/oracle_hcm, ...). Remaining imports
 will be updated in Tasks 12-15 as each ATS module is created.
 """
 import asyncio
+import functools
+import html as _html_module
 import json
 import logging
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -21,6 +23,78 @@ from backend.scraper._shared.browser import _USER_AGENT
 from backend.scraper._shared.urls import host_matches as _host_matches
 
 logger = logging.getLogger("jobnavigator.scraper.ats.descriptions")
+
+
+# Greenhouse slugs are constrained: alphanumerics + hyphens. Everything else is
+# rejected before we put it into a URL path — closes the door on punycode/IDN
+# weirdness from malformed hostnames silently composing into a request URL.
+_GH_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+@functools.lru_cache(maxsize=256)
+def _resolve_branded_greenhouse_slug(host: str) -> str | None:
+    """Look up the Greenhouse board slug for a customer host like `careers.nebius.com`.
+
+    Walks Company.scrape_urls — for any company with a `job-boards.greenhouse.io/{slug}`
+    URL, we treat their other scrape_urls (and aliases / common branded patterns) as
+    redirect targets to that slug.
+
+    Cached: results are stable for the process lifetime, and the alternative is one
+    full Companies-table scan per description fetch (5 concurrent workers × N jobs).
+    Cache invalidates only on process restart — fine for our use case.
+
+    Synchronous SQLAlchemy I/O — call sites must wrap with `asyncio.to_thread()` to
+    avoid blocking the event loop.
+
+    The lookup is best-effort and only used when the bare hostname inference would
+    yield the wrong slug (e.g. `c3.ai` → `c3iot`, `arize.com` → `arizeai`).
+    Returns None if no match.
+    """
+    if not host:
+        return None
+    host = host.lower()
+    # Lazy import to avoid circular imports during module init.
+    from backend.models.db import SessionLocal, Company
+    from urllib.parse import urlparse as _urlparse
+    db = SessionLocal()
+    try:
+        # Build {host: slug} from companies that have a Greenhouse scrape_url.
+        # Each company's name → slug from its job-boards.greenhouse.io URL.
+        for c in db.query(Company).all():
+            slug = None
+            for u in (c.scrape_urls or []):
+                u_host = (_urlparse(u).hostname or "").lower()
+                if u_host in ("job-boards.greenhouse.io", "boards.greenhouse.io"):
+                    parts = [p for p in _urlparse(u).path.strip("/").split("/") if p]
+                    if parts:
+                        slug = parts[0]
+                        break
+            if not slug:
+                continue
+            # Match if the requested host appears in the company's other scrape_urls.
+            for u in (c.scrape_urls or []):
+                u_host = (_urlparse(u).hostname or "").lower()
+                if u_host == host:
+                    return slug
+            # Best-effort: derive candidate company-domain keys from name and check
+            # for `careers.{name}.com`, `{name}.com`, `{name}.ai` style matches.
+            #   Variant A: dotted name preserved (handles C3.ai → c3.ai)
+            #   Variant B: dots/spaces stripped (handles "JPMorgan Chase" → jpmorganchase)
+            name_lower = (c.name or "").lower().strip()
+            name_dotted = name_lower.replace(" ", "")           # "C3.ai" → "c3.ai"
+            name_stripped = name_dotted.replace(".", "")        # "c3.ai" → "c3ai"
+            for cand in (name_dotted, name_stripped):
+                if not cand:
+                    continue
+                if host == cand:                                  # c3.ai == c3.ai
+                    return slug
+                if host.split(".")[1:2] == [cand]:                # careers.nebius.com
+                    return slug
+                if host.startswith(cand + ".") or host in (cand + ".com", cand + ".ai", cand + ".io"):
+                    return slug
+        return None
+    finally:
+        db.close()
 
 
 async def _fetch_job_description(url: str) -> str | None:
@@ -390,16 +464,109 @@ async def _fetch_description_ats(url: str) -> str | None:
                     logger.debug(f"SmartRecruiters description failed for {url}: {e}")
         return None
 
-    # ── Greenhouse: boards.greenhouse.io/{company}/jobs/{id} ──
-    if _host_matches(url, "greenhouse.io") and "/jobs/" in url:
+    # ── Branded Greenhouse: customer host with ?gh_jid={id} ──
+    # Customer career sites like careers.nebius.com, jobs.coinbase.com, c3.ai/...
+    # embed Greenhouse jobs via the gh_jid query param. Their slugs don't always
+    # match the hostname (Nebius=nebius works, but C3.ai=c3iot, Arize=arizeai),
+    # so we (1) consult a host→slug map built from Company.scrape_urls, then
+    # (2) fall back to common hostname patterns. Skip greenhouse.io itself —
+    # those are direct URLs, handled by the next branch.
+    qs = parse_qs(parsed.query)
+    gh_jid_vals = qs.get("gh_jid") or []
+    if gh_jid_vals and gh_jid_vals[0].isdigit() and not _host_matches(url, "greenhouse.io"):
+        gh_jid = gh_jid_vals[0]
+        host_parts = (parsed.hostname or "").split(".")
+        slug_candidates: list[tuple[str, str]] = []  # (slug, source-tag for logs)
+        # Priority 1: existing Company.scrape_urls map (handles c3.ai → c3iot).
+        # Sync DB I/O — offload off the event loop to avoid stalling the 5-way
+        # parallel description fetch.
+        try:
+            mapped = await asyncio.to_thread(
+                _resolve_branded_greenhouse_slug, parsed.hostname or ""
+            )
+            if mapped:
+                slug_candidates.append((mapped, "mapped"))
+        except Exception as e:
+            logger.debug(f"Branded Greenhouse company lookup failed: {e}")
+        # Priority 2: hostname-pattern fallback for hosts not yet seeded.
+        if len(host_parts) >= 3 and host_parts[0] in ("careers", "jobs", "work", "join"):
+            cand = host_parts[1]
+            if cand and cand not in (s for s, _ in slug_candidates):
+                slug_candidates.append((cand, "host-subdomain"))
+        if host_parts and host_parts[0] not in ("www",) \
+                and host_parts[0] not in (s for s, _ in slug_candidates):
+            slug_candidates.append((host_parts[0], "host-bare"))
+
+        # Source URL's registrable-ish domain — used to confirm the API result
+        # came from a slug owned by the same tenant we scraped, preventing the
+        # case where an inferred slug accidentally matches a different
+        # Greenhouse customer with the same gh_jid.
+        src_host = (parsed.hostname or "").lower()
+        src_root = ".".join(src_host.split(".")[-2:]) if "." in src_host else src_host
+
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            for slug, source in slug_candidates:
+                if not _GH_SLUG_RE.match(slug):
+                    logger.debug(f"Branded Greenhouse: rejecting unsafe slug {slug!r}")
+                    continue
+                api_url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{gh_jid}"
+                try:
+                    resp = await client.get(api_url)
+                except Exception as e:
+                    logger.debug(f"Branded Greenhouse fetch failed for {api_url}: {e}")
+                    continue
+                if resp.status_code != 200:
+                    continue
+                try:
+                    data = json.loads(resp.text)
+                except (ValueError, json.JSONDecodeError):
+                    continue
+                # For inferred (non-mapped) slugs, confirm the API response's
+                # absolute_url host shares the source URL's root domain. Stops
+                # cross-tenant collision: gh_jid 12345 might exist on slug `acme`
+                # AND `acme-co`; we should only accept the one we actually scraped.
+                if source != "mapped":
+                    api_abs = (data.get("absolute_url") or "").lower()
+                    api_host = (urlparse(api_abs).hostname or "").lower()
+                    api_root = ".".join(api_host.split(".")[-2:]) if "." in api_host else api_host
+                    if src_root and api_root and src_root != api_root \
+                            and "greenhouse.io" not in api_host:
+                        logger.debug(
+                            f"Branded Greenhouse: slug {slug!r} ({source}) returned "
+                            f"posting from {api_host} but source was {src_host} — rejecting"
+                        )
+                        continue
+                content_html = data.get("content", "")
+                if not content_html:
+                    continue
+                content_html = _html_module.unescape(_html_module.unescape(content_html))
+                soup = BeautifulSoup(content_html, "html.parser")
+                text = soup.get_text(separator="\n", strip=True)
+                if len(text) >= 50:
+                    logger.debug(
+                        f"Branded Greenhouse description for {url} "
+                        f"(slug={slug}, source={source}): {len(text)} chars"
+                    )
+                    return text[:30_000]
+        return None
+
+    # ── Greenhouse: boards.greenhouse.io/{company}/jobs/{id} OR ?gh_jid={id} ──
+    if _host_matches(url, "greenhouse.io"):
         path_parts = [p for p in parsed.path.strip("/").split("/") if p]
-        # Format: /{company}/jobs/{id}
+        # Two URL shapes:
+        #   /{company}/jobs/{id}                     — old-style direct path
+        #   /{company}?gh_jid={id}                   — board page with embed param
         company_slug = job_id = ""
         for i, p in enumerate(path_parts):
             if p == "jobs" and i + 1 < len(path_parts):
                 job_id = path_parts[i + 1]
                 if i > 0:
                     company_slug = path_parts[i - 1]
+        if not job_id:
+            jid_vals = parse_qs(parsed.query).get("gh_jid") or []
+            if jid_vals and jid_vals[0].isdigit() and path_parts:
+                job_id = jid_vals[0]
+                company_slug = path_parts[0]
         if company_slug and job_id:
             api_url = f"https://boards-api.greenhouse.io/v1/boards/{company_slug}/jobs/{job_id}"
             async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
