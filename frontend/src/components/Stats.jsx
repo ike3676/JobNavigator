@@ -257,16 +257,32 @@ export default function Stats() {
     try {
       const { data } = await api.get('/stats/sankey')
       if (data && data.length > 0) {
-        // Build Sankey nodes and links from flow data
+        // Recharts Sankey requires a DAG — any cycle (e.g. applied → interview →
+        // applied from a status flip-flop) causes infinite recursion in its
+        // layout pass and crashes the page. Filter to forward-only transitions
+        // before building the node list so orphan nodes don't slip through.
+        const STATUS_RANK = {
+          new: 0, saved: 1, applied: 2, interview: 3,
+          offer: 4, rejected: 5, ghosted: 5, withdrawn: 5,
+        }
+        const forwardEdges = data.filter(d => {
+          if (!d.source || !d.target || d.source === d.target) return false
+          const s = STATUS_RANK[d.source] ?? 99
+          const t = STATUS_RANK[d.target] ?? 99
+          return s < t
+        })
+        if (forwardEdges.length === 0) return
         const nodeNames = new Set()
-        data.forEach(d => { nodeNames.add(d.source); nodeNames.add(d.target) })
+        forwardEdges.forEach(d => { nodeNames.add(d.source); nodeNames.add(d.target) })
         const nodeList = [...nodeNames]
         const nodes = nodeList.map(name => ({ name }))
-        const links = data.map(d => ({
-          source: nodeList.indexOf(d.source),
-          target: nodeList.indexOf(d.target),
-          value: d.value,
-        })).filter(l => l.source !== -1 && l.target !== -1 && l.source !== l.target)
+        const links = forwardEdges
+          .map(d => ({
+            source: nodeList.indexOf(d.source),
+            target: nodeList.indexOf(d.target),
+            value: d.value,
+          }))
+          .filter(l => l.source !== -1 && l.target !== -1)
         if (links.length > 0) setSankeyData({ nodes, links })
       }
     } catch (e) { console.error(e) }
