@@ -801,15 +801,18 @@ async def export_pdf(resume_id: str, db: Session = Depends(get_db)):
         logger.error(f"PDF generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
 
-    # Build filename: CV_{name}_{base cv name}_{short_id}.pdf
+    # Build filename: {Name}_{Type}_Resume_{number}.pdf
+    # Name = candidate header name; Type = base resume name (PM/PjM/\u2026);
+    # number = linked job short_id (omitted for base resumes with no job).
     header_name = (resume.json_data or {}).get("header", {}).get("name", "Resume").replace(" ", "")
-    base_name = resume.name.split(" \u2192 ")[0] if " \u2192 " in (resume.name or "") else resume.name
-    short_id = ""
+    base_name = (resume.name.split(" \u2192 ")[0] if " \u2192 " in (resume.name or "") else resume.name) or "Resume"
+    base_name = base_name.replace(" ", "")
+    number = ""
     if resume.job_id:
         job_for_name = db.query(Job).filter(Job.id == resume.job_id).first()
         if job_for_name and job_for_name.short_id:
-            short_id = f"_{job_for_name.short_id}"
-    filename = f"CV_{header_name}_{base_name}{short_id}".encode("ascii", "replace").decode()
+            number = f"_{job_for_name.short_id}"
+    filename = f"{header_name}_{base_name}_Resume{number}".encode("ascii", "replace").decode()
 
     headers = {
         "Content-Disposition": f'attachment; filename="{filename}.pdf"',
