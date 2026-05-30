@@ -262,9 +262,9 @@ export default function CoverLetterBuilder() {
   const paras = editData.body_paragraphs || []
 
   return (
-    <div className="flex h-full">
-      {/* Left: controls */}
-      <div className="w-[560px] flex-shrink-0 border-r dark:border-gray-700 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
+    <div className="grid grid-cols-5 gap-0 h-full">
+      {/* Left: controls (2/5, matches resume editor) */}
+      <div className="col-span-2 border-r dark:border-gray-700 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
         {/* Picker */}
         <div className="relative cl-picker mb-4">
           <button onClick={() => setPickerOpen(!pickerOpen)}
@@ -431,7 +431,7 @@ export default function CoverLetterBuilder() {
       </div>
 
       {/* Right: preview */}
-      <div className="flex-1 flex flex-col bg-gray-100 dark:bg-gray-950">
+      <div className="col-span-3 flex flex-col bg-gray-100 dark:bg-gray-950 min-h-0">
         <div className="flex items-center justify-between px-4 py-2 border-b dark:border-gray-700 bg-white dark:bg-gray-800">
           <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-2">
             Preview {saving && <Loader2 size={12} className="animate-spin text-gray-400" />}
