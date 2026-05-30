@@ -94,7 +94,9 @@ def test_templates_endpoint(api_client, test_db):
     resp = api_client.get("/api/cover-letters/templates")
     assert resp.status_code == 200
     ids = {t["id"] for t in resp.json()}
-    assert {"garamond", "inter", "traditional"} <= ids
+    # Assert tracked templates only — `garamond` is gitignored (licensed fonts)
+    # and absent on fresh clones / CI.
+    assert {"garamond_alt", "inter", "traditional"} <= ids
 
 
 # ── Generate validation ──────────────────────────────────────────────────────
