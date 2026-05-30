@@ -264,12 +264,24 @@ async def generate_cover_letter(body: dict, db: Session = Depends(get_db)):
 
 async def _generate_impl(resume_id: str, job_id: str, voice: str | None, length: str,
                          template: str | None, page_format: str | None):
-    """Background worker: generate the letter and persist a CoverLetter row."""
+    """Background worker: generate the letter and persist a CoverLetter row.
+
+    Semaphore-guarded (shared with tailoring) so concurrent generations across
+    different (resume, job) pairs don't blow the LLM rate limit.
+    """
     from backend.analyzer.cover_letter_generator import (
         resolve_voice_instruction, generate_cover_letter_body,
     )
     from backend.analyzer.llm_logger import track_llm_call
+    from backend.api.routes_resumes import _get_tailoring_semaphore
 
+    async with _get_tailoring_semaphore():
+        await _generate_inner(resume_id, job_id, voice, length, template, page_format,
+                              resolve_voice_instruction, generate_cover_letter_body, track_llm_call)
+
+
+async def _generate_inner(resume_id, job_id, voice, length, template, page_format,
+                          resolve_voice_instruction, generate_cover_letter_body, track_llm_call):
     db = SessionLocal()
     try:
         resume = db.query(Resume).filter(Resume.id == resume_id).first()

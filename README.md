@@ -59,10 +59,11 @@ Self-hosted job search automation — scrape any career portal or use job aggreg
                                      │
                                      ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              RESUME BUILDER                                 │
+│                          RESUME + COVER LETTER                              │
 │                                                                             │
-│   Templates ── 8 built-in, auto-discovered (drop a folder to add yours)     │
-│   AI Tailor ── Rewrites bullets and keywords based on scoring report        │
+│   Templates ── 8 resume + 3 cover-letter, auto-discovered (add your own)    │
+│   AI Tailor ── Rewrites resume bullets/keywords from the scoring report     │
+│   AI Letter ── Job-specific cover letters from resume + JD, voice presets   │
 │   Export ───── PDF via Playwright, page count indicator                     │
 │                                                                             │
 └────────────────────────────────────┬────────────────────────────────────────┘
@@ -85,6 +86,7 @@ Self-hosted job search automation — scrape any career portal or use job aggreg
 | **Multi-Source Discovery** | 6 scraping tiers: career pages (Playwright + 11 ATS), JobSpy (4 boards), LinkedIn Personal, Levels.fyi, Jobright.ai, Chrome Extension |
 | **AI CV Scoring** | Multi-provider (Claude, OpenAI, Ollama), light/full depth, per-CV comparison, keyword analysis, requirement mapping, ATS tips. **Prompt caching** on Anthropic cuts repeat-scoring cost ~50%. |
 | **Resume Builder** | 8 templates (auto-discovered - add yours), AI tailoring per job, PDF export, tracer links to track opens |
+| **Cover Letters** | AI-generated per job, grounded in the paired resume + persona; editable voice presets, 3 templates, PDF export, prompt-cached generation |
 | **Smart Dedup** | Two-layer: URL hash + cross-source content hash. Configurable tracking param stripping |
 | **Job Feed** | Filters, sorting, keyboard shortcuts (j/k/s/x/e), scoring reports, bulk operations |
 | **Application Board** | Kanban pipeline with drag-and-drop, status transition history |

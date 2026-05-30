@@ -7,7 +7,7 @@ from sqlalchemy import (
     ForeignKey, JSON, Index, create_engine, text
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.orm import backref, declarative_base, relationship, sessionmaker
 
 from backend.config import DATABASE_URL
 
@@ -319,9 +319,13 @@ class CoverLetter(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
-    parent = relationship("CoverLetter", remote_side=[id], backref="revisions")
-    job = relationship("Job", backref="cover_letters")
-    resume = relationship("Resume", backref="cover_letters")
+    # passive_deletes lets the DB's ON DELETE SET NULL fire without the ORM
+    # eagerly loading + null-ing related cover letters when a Job/Resume/parent
+    # is deleted (matches the FK ondelete on job_id/resume_id/parent_id above).
+    parent = relationship("CoverLetter", remote_side=[id],
+                          backref=backref("revisions", passive_deletes=True))
+    job = relationship("Job", backref=backref("cover_letters", passive_deletes=True))
+    resume = relationship("Resume", backref=backref("cover_letters", passive_deletes=True))
 
 
 # ── Persona ──────────────────────────────────────────────────────────────────
