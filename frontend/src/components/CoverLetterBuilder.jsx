@@ -71,6 +71,7 @@ export default function CoverLetterBuilder() {
   // Generate panel
   const [resumes, setResumes] = useState([])
   const [jobs, setJobs] = useState([])
+  const [personaAvailable, setPersonaAvailable] = useState(false)
   const [voicePresets, setVoicePresets] = useState([])
   const [genResume, setGenResume] = useState('')
   const [genJob, setGenJob] = useState('')
@@ -88,16 +89,14 @@ export default function CoverLetterBuilder() {
   useEffect(() => {
     fetchLetters()
     api.get('/cover-letters/templates').then(({ data }) => setTemplates(data)).catch(() => setTemplates([]))
-    api.get('/resumes').then(({ data }) => setResumes(data)).catch(() => {})
-    // Saved + applied jobs are the realistic targets for a cover letter
-    Promise.all([
-      api.get('/jobs?status=saved').then(r => r.data).catch(() => []),
-      api.get('/jobs?status=applied').then(r => r.data).catch(() => []),
-    ]).then(([a, b]) => {
-      const seen = new Set()
-      const merged = [...a, ...b].filter(j => { if (seen.has(j.id)) return false; seen.add(j.id); return true })
-      setJobs(merged)
-    })
+    // Base resumes only — tailored ones have long auto-names and clutter the picker.
+    api.get('/resumes?is_base=true').then(({ data }) => setResumes(data)).catch(() => {})
+    // Offer "Persona" as a base if its resume_content is filled in.
+    api.get('/persona').then(({ data }) => {
+      setPersonaAvailable(Object.keys(data?.resume_content || {}).length > 0)
+    }).catch(() => {})
+    // Saved jobs are the target set (jobs you're about to apply to). /jobs returns {jobs, total}.
+    api.get('/jobs?status=saved&limit=200').then(r => setJobs(r.data.jobs || [])).catch(() => setJobs([]))
     api.get('/settings').then(({ data }) => {
       try {
         const raw = data.cover_letter_voice_presets
@@ -110,7 +109,14 @@ export default function CoverLetterBuilder() {
     const preJob = searchParams.get('job')
     const preResume = searchParams.get('resume')
     if (preJob) setGenJob(preJob)
-    if (preResume) setGenResume(preResume)
+    if (preResume) {
+      setGenResume(preResume)
+      // The Resume editor links a tailored resume, which isn't in the base-only
+      // list — fetch it and add it so the pre-selection is valid.
+      api.get(`/resumes/${preResume}`).then(({ data }) => {
+        setResumes(prev => prev.some(r => r.id === preResume) ? prev : [data, ...prev])
+      }).catch(() => {})
+    }
   }, [])
 
   // Poll /monitor/active for generate_cover_letter runs so the spinner survives navigation.
@@ -258,7 +264,7 @@ export default function CoverLetterBuilder() {
   return (
     <div className="flex h-full">
       {/* Left: controls */}
-      <div className="w-[460px] flex-shrink-0 border-r dark:border-gray-700 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
+      <div className="w-[560px] flex-shrink-0 border-r dark:border-gray-700 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
         {/* Picker */}
         <div className="relative cl-picker mb-4">
           <button onClick={() => setPickerOpen(!pickerOpen)}
@@ -282,20 +288,23 @@ export default function CoverLetterBuilder() {
         {/* Generate panel */}
         <Section title="Generate New" defaultOpen={letters.length === 0}>
           <div className="mb-2">
-            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Resume (evidence + voice)</label>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Your resume</label>
             <select value={genResume} onChange={e => onPickResume(e.target.value)}
               className="border rounded px-2 py-1.5 text-sm w-full dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600">
               <option value="">Select resume…</option>
+              {personaAvailable && <option value="persona">Persona (full profile)</option>}
               {resumes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">The letter pulls your achievements and writing style from this resume (or your full Persona profile).</p>
           </div>
           <div className="mb-2">
-            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Job</label>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Target job</label>
             <select value={genJob} onChange={e => setGenJob(e.target.value)}
               className="border rounded px-2 py-1.5 text-sm w-full dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600">
               <option value="">Select job (saved/applied)…</option>
               {jobs.map(j => <option key={j.id} value={j.id}>{j.company} — {j.title}</option>)}
             </select>
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">The posting the letter is written for (its description is the target).</p>
           </div>
           <div className="flex gap-2 mb-2">
             <div className="flex-1">

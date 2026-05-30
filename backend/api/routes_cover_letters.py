@@ -224,11 +224,18 @@ async def generate_cover_letter(body: dict, db: Session = Depends(get_db)):
     if not resume_id or not job_id:
         raise HTTPException(400, "resume_id and job_id are required")
 
-    resume = db.query(Resume).filter(Resume.id == resume_id).first()
-    if not resume:
-        raise HTTPException(404, "Resume not found")
-    if not (resume.json_data or {}):
-        raise HTTPException(400, "Resume has no content")
+    # Reserved id 'persona' bases the letter on the Persona's resume_content
+    # (mirrors the tailor flow). Otherwise resume_id must be a real Resume row.
+    if resume_id == "persona":
+        persona = db.query(Persona).filter(Persona.id == 1).first()
+        if not persona or not (persona.resume_content or {}):
+            raise HTTPException(400, "Persona has no resume_content — fill it in /persona first")
+    else:
+        resume = db.query(Resume).filter(Resume.id == resume_id).first()
+        if not resume:
+            raise HTTPException(404, "Resume not found")
+        if not (resume.json_data or {}):
+            raise HTTPException(400, "Resume has no content")
 
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -284,11 +291,30 @@ async def _generate_inner(resume_id, job_id, voice, length, template, page_forma
                           resolve_voice_instruction, generate_cover_letter_body, track_llm_call):
     db = SessionLocal()
     try:
-        resume = db.query(Resume).filter(Resume.id == resume_id).first()
         job = db.query(Job).filter(Job.id == job_id).first()
         persona = db.query(Persona).filter(Persona.id == 1).first()
-        if not resume or not job:
-            raise RuntimeError("resume or job missing at execution time")
+        if not job:
+            raise RuntimeError("job missing at execution time")
+
+        # Resolve the evidence source: Persona.resume_content or a Resume row.
+        persona_as_base = (resume_id == "persona")
+        if persona_as_base:
+            if not persona or not (persona.resume_content or {}):
+                raise RuntimeError("persona has no resume_content at execution time")
+            resume_data = persona.resume_content or {}
+            base_name = "Persona"
+            base_template = None
+            base_page_format = None
+            stored_resume_id = None
+        else:
+            resume = db.query(Resume).filter(Resume.id == resume_id).first()
+            if not resume:
+                raise RuntimeError("resume missing at execution time")
+            resume_data = resume.json_data or {}
+            base_name = resume.name
+            base_template = resume.template
+            base_page_format = resume.page_format
+            stored_resume_id = resume_id
 
         prompt_template = db.query(Setting).filter(Setting.key == "cover_letter_prompt").first().value
         voice_id, voice_instruction = resolve_voice_instruction(db, voice)
@@ -301,13 +327,13 @@ async def _generate_inner(resume_id, job_id, voice, length, template, page_forma
 
         async with track_llm_call("cover_letter", _provider, _model, job_id=job_id) as _tracker:
             body = await generate_cover_letter_body(
-                resume.json_data or {}, preferences, job.description or "",
+                resume_data, preferences, job.description or "",
                 voice_instruction, length, prompt_template,
             )
             _tracker.usage = body.pop("_usage", _tracker.usage)
 
         # Assemble json_data: header from resume, recipient/date from job/company
-        header = (resume.json_data or {}).get("header", {})
+        header = resume_data.get("header", {})
         today = date.today().strftime("%B %d, %Y")
         json_data = {
             "header": {"name": header.get("name", ""), "contact_items": header.get("contact_items", [])},
@@ -319,12 +345,13 @@ async def _generate_inner(resume_id, job_id, voice, length, template, page_forma
             "signature": body["signature"] or header.get("name", ""),
         }
 
+        job_label = f"{job.company} — {job.title}" if job.company else (job.title or "Job")
         cl = CoverLetter(
-            name=f"{resume.name} → {job.company} — {job.title}",
+            name=f"{base_name} → {job_label}",
             job_id=job_id,
-            resume_id=resume_id,
-            template=template or resume.template or _default_template_id(),
-            page_format=page_format or resume.page_format or "letter",
+            resume_id=stored_resume_id,
+            template=template or base_template or _default_template_id(),
+            page_format=page_format or base_page_format or "letter",
             json_data=json_data,
         )
         db.add(cl)
