@@ -398,8 +398,16 @@ export default function CoverLetterBuilder() {
             <Section title="Header" defaultOpen={false}>
               <Field label="Name" value={editData.header?.name} onChange={v => update(d => { d.header = d.header || {}; d.header.name = v })} />
               <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Contact items</label>
-              {(editData.header?.contact_items || []).map((item, i) => (
-                <div key={i} className="flex gap-1 mb-1">
+              {(editData.header?.contact_items || []).map((item, i) => {
+                const items = editData.header?.contact_items || []
+                return (
+                <div key={i} className="flex items-center gap-1 mb-1">
+                  <div className="flex flex-col">
+                    <button onClick={() => update(d => { if (i > 0) { const a = d.header.contact_items; [a[i-1], a[i]] = [a[i], a[i-1]] } })} disabled={i === 0}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-20"><ArrowUp size={11} /></button>
+                    <button onClick={() => update(d => { const a = d.header.contact_items; if (i < a.length - 1) [a[i+1], a[i]] = [a[i], a[i+1]] })} disabled={i === items.length - 1}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-20"><ArrowDown size={11} /></button>
+                  </div>
                   <input className="border rounded px-2 py-1 text-sm w-32 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600" placeholder="text"
                     value={item.text || ''} onChange={e => update(d => d.header.contact_items[i].text = e.target.value)} />
                   <input className="border rounded px-2 py-1 text-sm flex-1 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600" placeholder="url"
@@ -411,7 +419,8 @@ export default function CoverLetterBuilder() {
                   )}
                   <button onClick={() => update(d => d.header.contact_items.splice(i, 1))} className="text-gray-400 hover:text-red-500"><Trash2 size={13} /></button>
                 </div>
-              ))}
+                )
+              })}
               <button onClick={() => update(d => { d.header = d.header || {}; d.header.contact_items = d.header.contact_items || []; d.header.contact_items.push({ text: '', url: '' }) })}
                 className="text-sm text-indigo-600 dark:text-indigo-400 flex items-center gap-1 hover:underline mt-1">
                 <Plus size={13} /> Add contact
