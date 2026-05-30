@@ -400,10 +400,15 @@ export default function CoverLetterBuilder() {
               <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Contact items</label>
               {(editData.header?.contact_items || []).map((item, i) => (
                 <div key={i} className="flex gap-1 mb-1">
-                  <input className="border rounded px-2 py-1 text-sm flex-1 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600" placeholder="text"
+                  <input className="border rounded px-2 py-1 text-sm w-32 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600" placeholder="text"
                     value={item.text || ''} onChange={e => update(d => d.header.contact_items[i].text = e.target.value)} />
                   <input className="border rounded px-2 py-1 text-sm flex-1 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600" placeholder="url"
                     value={item.url || ''} onChange={e => update(d => d.header.contact_items[i].url = e.target.value)} />
+                  {item.url && !item.url.startsWith('mailto:') && (
+                    <input className="border rounded px-2 py-1 text-sm w-12 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600" placeholder="id"
+                      title="Short stub for tracer link ID (e.g. l, w, gh)"
+                      value={item.stub || ''} onChange={e => update(d => d.header.contact_items[i].stub = e.target.value)} />
+                  )}
                   <button onClick={() => update(d => d.header.contact_items.splice(i, 1))} className="text-gray-400 hover:text-red-500"><Trash2 size={13} /></button>
                 </div>
               ))}

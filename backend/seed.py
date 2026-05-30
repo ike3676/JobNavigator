@@ -361,6 +361,10 @@ END $$;""",
         # writing_samples retired — voice now comes from the paired resume + persona
         # preferences (see cover-letter feature). Idempotent drop for existing DBs.
         "ALTER TABLE personas DROP COLUMN IF EXISTS writing_samples",
+        # Tracer links can now belong to a cover letter too — add the FK + relax
+        # resume_id to nullable. Idempotent for existing DBs.
+        "ALTER TABLE tracer_links ADD COLUMN IF NOT EXISTS cover_letter_id UUID REFERENCES cover_letters(id) ON DELETE CASCADE",
+        "ALTER TABLE tracer_links ALTER COLUMN resume_id DROP NOT NULL",
         # Task 11: drop the legacy cvs table — Resume + Persona is the new world.
         # Idempotent: subsequent restarts no-op once the table is gone.
         "DROP TABLE IF EXISTS cvs",

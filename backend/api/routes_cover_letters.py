@@ -16,9 +16,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, JSONResponse
 from sqlalchemy.orm import Session
 
-from backend.models.db import get_db, CoverLetter, Resume, Job, Setting, Persona, SessionLocal
+from backend.models.db import get_db, CoverLetter, Resume, Job, Setting, Persona, TracerLink, SessionLocal
 from backend.job_monitor import launch_background, JobAlreadyRunningError
-from backend.api.routes_resumes import _get_browser  # shared warm browser
+from backend.api.routes_resumes import _get_browser, _rewrite_urls_with_tracers  # shared with resumes
 
 logger = logging.getLogger("jobnavigator.cover_letters")
 
@@ -163,6 +163,9 @@ def delete_cover_letter(cl_id: str, db: Session = Depends(get_db)):
     cl = db.query(CoverLetter).filter(CoverLetter.id == cl_id).first()
     if not cl:
         raise HTTPException(404, "Cover letter not found")
+    # Drop tracer links first (DB has ON DELETE CASCADE, but delete explicitly so
+    # the ORM doesn't try to NULL the FK on this nullable column).
+    db.query(TracerLink).filter(TracerLink.cover_letter_id == cl.id).delete(synchronize_session=False)
     db.delete(cl)
     db.commit()
     return {"deleted": cl_id}
@@ -176,7 +179,9 @@ async def export_pdf(cl_id: str, db: Session = Depends(get_db)):
     if not cl:
         raise HTTPException(404, "Cover letter not found")
 
-    html = _render_html(cl.json_data or {}, cl.template, cl.page_format)
+    pdf_data = _rewrite_urls_with_tracers(cl.json_data or {}, None, db,
+                                          cover_letter_id=str(cl.id), job_id=cl.job_id)
+    html = _render_html(pdf_data, cl.template, cl.page_format)
     fmt = cl.page_format or "letter"
     paper_format = "A4" if fmt.lower() == "a4" else "Letter"
 

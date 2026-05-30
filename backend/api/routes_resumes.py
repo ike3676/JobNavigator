@@ -261,10 +261,16 @@ def _render_html(json_data: dict, template_name: str, page_format: str) -> str:
     return html
 
 
-def _rewrite_urls_with_tracers(json_data: dict, resume_id: str, db) -> dict:
-    """Replace URLs in json_data with tracer redirect URLs. Returns modified copy."""
-    import string, random, json as _json
+def _rewrite_urls_with_tracers(json_data: dict, resume_id: str, db,
+                               cover_letter_id: str = None, job_id=None) -> dict:
+    """Replace header contact URLs with tracer redirect URLs. Returns modified copy.
 
+    Owner is exactly one of a resume (resume_id) or a cover letter
+    (cover_letter_id). For job_id token styles, the owning job's short_id is
+    resolved from the Resume's job_id, or from the passed `job_id` for cover
+    letters.
+    """
+    import string, random, json as _json
 
     enabled_row = db.query(Setting).filter(Setting.key == "tracer_links_enabled").first()
     if not enabled_row or enabled_row.value != "true":
@@ -278,6 +284,37 @@ def _rewrite_urls_with_tracers(json_data: dict, resume_id: str, db) -> dict:
     style_row = db.query(Setting).filter(Setting.key == "tracer_links_url_style").first()
     url_style = style_row.value if style_row else "path"
 
+    owner_is_cl = cover_letter_id is not None
+    owner_filter = (TracerLink.cover_letter_id == cover_letter_id) if owner_is_cl \
+        else (TracerLink.resume_id == resume_id)
+
+    def _new_link(token, dest_url, label):
+        kwargs = {"token": token, "destination_url": dest_url, "source_label": label}
+        if owner_is_cl:
+            kwargs["cover_letter_id"] = cover_letter_id
+        else:
+            kwargs["resume_id"] = resume_id
+        return TracerLink(**kwargs)
+
+    def _repoint(link, dest_url, label):
+        if owner_is_cl:
+            link.cover_letter_id = cover_letter_id
+        else:
+            link.resume_id = resume_id
+        link.destination_url = dest_url
+        link.source_label = label
+
+    # Resolve the owning job's short_id once (for *_jobid token styles).
+    job_short_id = None
+    if url_style in ("path_jobid", "param_jobid"):
+        resolved_job_id = job_id
+        if not resolved_job_id and not owner_is_cl:
+            resume_obj = db.query(Resume).filter(Resume.id == resume_id).first()
+            resolved_job_id = resume_obj.job_id if resume_obj else None
+        if resolved_job_id:
+            job_obj = db.query(Job).filter(Job.id == resolved_job_id).first()
+            job_short_id = job_obj.short_id if job_obj else None
+
     data = _json.loads(_json.dumps(json_data))  # deep copy
     header = data.get("header", {})
 
@@ -288,57 +325,39 @@ def _rewrite_urls_with_tracers(json_data: dict, resume_id: str, db) -> dict:
             continue
 
         label = item.get("text", f"Link {i+1}")
-
-        # Ensure it's a full URL for the destination
         dest_url = url if url.startswith("http") else f"https://{url}"
-
-        # Suffix for per-link distinction in job_id modes (user-defined stub or fallback to first 3 chars)
+        # Suffix for per-link distinction in job_id modes (user stub or first 3 chars)
         label_suffix = item.get("stub") or label.lower()[:3]
 
-        token = None
-        # Determine token based on style
-        if url_style in ("path_jobid", "param_jobid"):
+        token = f"{job_short_id}{label_suffix}" if job_short_id else None
 
-            resume_obj = db.query(Resume).filter(Resume.id == resume_id).first()
-            if resume_obj and resume_obj.job_id:
-                job_obj = db.query(Job).filter(Job.id == resume_obj.job_id).first()
-                if job_obj and job_obj.short_id:
-                    token = f"{job_obj.short_id}{label_suffix}"
-
-        # Find or create tracer link
+        # Find or create tracer link for this owner + destination
         existing = db.query(TracerLink).filter(
-            TracerLink.resume_id == resume_id,
-            TracerLink.destination_url == dest_url,
+            owner_filter, TracerLink.destination_url == dest_url,
         ).first()
 
         if existing:
-            # Update token if style changed
             if token and existing.token != token:
                 existing.token = token
                 db.commit()
             if not token:
                 token = existing.token
         else:
-            # For job_id-based tokens, reuse existing token from a previous resume for the same job
             if token:
                 existing_by_token = db.query(TracerLink).filter(TracerLink.token == token).first()
                 if existing_by_token:
-                    # Point the existing token to this new resume
-                    existing_by_token.resume_id = resume_id
-                    existing_by_token.destination_url = dest_url
-                    existing_by_token.source_label = label
+                    _repoint(existing_by_token, dest_url, label)
                     db.commit()
                 else:
-                    db.add(TracerLink(token=token, resume_id=resume_id, destination_url=dest_url, source_label=label))
+                    db.add(_new_link(token, dest_url, label))
                     db.commit()
             else:
-                # Generate unique random token
                 chars = string.ascii_lowercase + string.digits
                 for _ in range(100):
                     token = ''.join(random.choices(chars, k=6))
                     if not db.query(TracerLink).filter(TracerLink.token == token).first():
                         break
-                db.add(TracerLink(token=token, resume_id=resume_id, destination_url=dest_url, source_label=label))
+                db.add(_new_link(token, dest_url, label))
                 db.commit()
 
         if url_style in ("param", "param_jobid"):

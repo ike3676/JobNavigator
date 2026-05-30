@@ -358,13 +358,16 @@ class TracerLink(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     token = Column(String(10), unique=True, nullable=False, index=True)
-    resume_id = Column(UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="CASCADE"), nullable=False)
+    # A tracer link belongs to exactly one of a resume OR a cover letter.
+    resume_id = Column(UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="CASCADE"), nullable=True)
+    cover_letter_id = Column(UUID(as_uuid=True), ForeignKey("cover_letters.id", ondelete="CASCADE"), nullable=True)
     destination_url = Column(String, nullable=False)
     source_label = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     resume = relationship("Resume", backref="tracer_links")
+    cover_letter = relationship("CoverLetter", backref="tracer_links")
     click_events = relationship("TracerClickEvent", backref="tracer_link", cascade="all, delete-orphan")
 
 
