@@ -197,7 +197,6 @@ async def check_job_h1b(job: Job, db) -> None:
     Per-job: only the body exclusion scan runs (no HTTP calls).
     """
     from backend.models.db import find_company_by_name
-    from datetime import timedelta
     company = find_company_by_name(db, job.company or "")
     lca_count = 0
     approval_rate = 0.0

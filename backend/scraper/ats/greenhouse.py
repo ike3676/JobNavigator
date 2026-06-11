@@ -153,7 +153,7 @@ async def scrape(url: str, debug: bool = False) -> list[dict] | tuple:
                     job_office_ids = {o.get("id") for o in posting.get("offices", [])}
                     if not job_office_ids.intersection(match_office_ids):
                         if debug:
-                            rejected.append({"title": title, "url": job_url, "selector": "greenhouse_api", "reason": f"Office not in filter"})
+                            rejected.append({"title": title, "url": job_url, "selector": "greenhouse_api", "reason": "Office not in filter"})
                         continue
                     # Office matches but location.name doesn't — only keep if
                     # location.name isn't a known office name (meaning it's a

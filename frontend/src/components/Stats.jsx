@@ -11,8 +11,6 @@ const TYPE_COLORS = {
   telegram: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300',
 }
 
-const FUNNEL_COLORS = ['#6366f1', '#818cf8', '#a78bfa', '#c4b5fd', '#7c3aed']
-
 const SCORE_COLORS = { "0-20": "#ef4444", "21-40": "#f97316", "41-60": "#eab308", "61-80": "#22c55e", "81-100": "#6366f1" }
 
 function decodeCron(expr) {
@@ -41,7 +39,7 @@ const SANKEY_NODE_COLORS = {
   screening: '#818cf8', phone_screen: '#a78bfa', final_round: '#f97316',
 }
 
-const SankeyNode = ({ x, y, width, height, index, payload }) => {
+const SankeyNode = ({ x, y, width, height, payload }) => {
   const name = payload?.name || ''
   const value = payload?.value || 0
   const color = SANKEY_NODE_COLORS[name] || '#6366f1'

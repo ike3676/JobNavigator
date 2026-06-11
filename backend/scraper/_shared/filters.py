@@ -186,7 +186,7 @@ def _validate_job(title: str, url: str) -> str | None:
     title_clean = title.strip()
     title_lower = title_clean.lower()
     if title_lower in GARBAGE_TITLES:
-        return f"Garbage title (exact match)"
+        return "Garbage title (exact match)"
     for sub in GARBAGE_SUBSTRINGS:
         if sub in title_lower:
             return f"Garbage substring: '{sub}'"
@@ -199,9 +199,8 @@ def _validate_job(title: str, url: str) -> str | None:
         return "No URL"
     url_lower = url.lower()
     if not (url_lower.startswith('http://') or url_lower.startswith('https://')):
-        return f"Bad URL scheme"
-    if url_lower.startswith('mailto:'):
-        return "Mailto link"
+        # Covers mailto:, javascript:, relative paths — anything non-http(s)
+        return "Bad URL scheme"
     parsed = urlparse(url)
     if not parsed.netloc:
         return "No host in URL"

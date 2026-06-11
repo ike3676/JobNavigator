@@ -572,9 +572,6 @@ async def score_single_job(job_id: str, cv_ids: list = None, depth: str = "full"
             logger.error(f"Job {job_id} not found")
             return
 
-        # Snapshot mutable state we'll need later for merging
-        existing_scores = dict(job.cv_scores or {})
-        existing_report = dict(job.scoring_report or {})
         job_title = job.title
         job_company = job.company
 

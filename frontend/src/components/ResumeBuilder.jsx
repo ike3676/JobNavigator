@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api from '../api'
-import { Plus, Trash2, X, ChevronDown, ChevronRight, ChevronUp, Download, Upload, Loader2, Wand2, ArrowUp, ArrowDown, ExternalLink, Briefcase, CheckCircle2, Mail } from 'lucide-react'
+import { Plus, Trash2, X, ChevronDown, ChevronRight, Download, Upload, Loader2, Wand2, ArrowUp, ArrowDown, ExternalLink, Briefcase, CheckCircle2, Mail } from 'lucide-react'
 import { diffWords } from 'diff'
 
 function InlineDiff({ oldText, newText }) {
@@ -143,7 +143,6 @@ export default function ResumeBuilder() {
   const [tailorJdText, setTailorJdText] = useState('')
   const [tailoring, setTailoring] = useState(false)
   const [recentJobs, setRecentJobs] = useState([])
-  const [pageCount, setPageCount] = useState(null)
   const [tracerStats, setTracerStats] = useState([])
   const [resumeSearch, setResumeSearch] = useState('')
   const [resumeDropdownOpen, setResumeDropdownOpen] = useState(false)
@@ -443,26 +442,6 @@ export default function ResumeBuilder() {
     } catch (e) {
       console.error(e)
     }
-  }
-
-  const importPdf = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const { data: parsed } = await api.post('/resumes/import-pdf', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      const name = file.name.replace(/\.pdf$/i, '')
-      const { data: created } = await api.post('/resumes', { name, json_data: parsed.json_data })
-      await fetchResumes()
-      selectResume(created)
-    } catch (e) {
-      console.error(e)
-      alert('PDF import failed: ' + (e.response?.data?.detail || e.message))
-    }
-    if (pdfInputRef.current) pdfInputRef.current.value = ''
   }
 
   const loadRecentJobs = async () => {

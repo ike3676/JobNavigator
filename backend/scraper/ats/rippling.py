@@ -34,8 +34,6 @@ def _parse_rippling_url(url: str) -> tuple[str, dict]:
       - https://ats.rippling.com/{slug}/jobs?department=Product&workLocation=...
       - https://www.rippling.com/careers/open-roles  (defaults to board slug 'rippling')
     """
-    from urllib.parse import parse_qs
-
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     filters = {}
@@ -66,8 +64,6 @@ async def scrape(url: str, debug: bool = False) -> list[dict] | tuple:
     Multi-location jobs appear multiple times (same UUID, different workLocation);
     we deduplicate by UUID, preferring locations that match the filter.
     """
-    import json
-
     slug, filters = _parse_rippling_url(url)
     api_url = f"https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs"
     filter_dept = filters.get("department", "").lower()

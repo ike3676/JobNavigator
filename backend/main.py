@@ -711,7 +711,7 @@ async def telegram_test():
 @app.get("/api/scheduler/jobs", tags=["scheduler"], summary="List scheduled jobs")
 def get_scheduler_jobs():
     """Return all scheduler jobs with their schedule, next run time (UTC), trigger URL, and running state."""
-    from backend.scheduler import scheduler, get_setting
+    from backend.scheduler import scheduler
     from backend.models.db import Company
 
     # Map scheduler job IDs to (trigger_url, job_type for monitor)

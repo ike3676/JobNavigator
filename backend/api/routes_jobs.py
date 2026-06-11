@@ -312,7 +312,6 @@ async def save_from_extension(body: dict, db: Session = Depends(get_db)):
       • H-1B / body-exclusion scan (flagged jobs go to status='ignored')
       • auto-score chain when the 'Extension' search has auto_scoring_depth set
     """
-    from backend.scraper._shared.dedup import make_external_id, make_content_hash
     from backend.analyzer.h1b_checker import check_job_h1b
     from backend.models.db import Search
     import uuid as _uuid

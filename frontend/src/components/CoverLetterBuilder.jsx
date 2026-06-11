@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api from '../api'
-import { Plus, Trash2, ChevronDown, ChevronRight, ChevronUp, ChevronDown as ChevDown, Download, Loader2, Wand2, ArrowUp, ArrowDown, Mail } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronRight, Download, Loader2, Wand2, ArrowUp, ArrowDown, Mail } from 'lucide-react'
 
 const PAGE_FORMATS = [
   { id: 'letter', name: 'US Letter' },
@@ -270,7 +270,7 @@ export default function CoverLetterBuilder() {
           <button onClick={() => setPickerOpen(!pickerOpen)}
             className="w-full flex items-center justify-between bg-white dark:bg-gray-800 border dark:border-gray-700 rounded px-3 py-2 text-sm dark:text-gray-200">
             <span className="flex items-center gap-2 truncate"><Mail size={14} />{letters.find(c => c.id === selectedId)?.name || 'Select a cover letter'}</span>
-            <ChevDown size={14} />
+            <ChevronDown size={14} />
           </button>
           {pickerOpen && (
             <div className="absolute z-20 mt-1 w-full bg-white dark:bg-gray-800 border dark:border-gray-700 rounded shadow-lg max-h-72 overflow-y-auto">

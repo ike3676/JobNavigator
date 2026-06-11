@@ -22,22 +22,7 @@ DEFAULT_SETTINGS = {
     "job_archive_after_days": ("90", "Delete skipped jobs older than N days (used by cleanup job)"),
     "auto_reject_after_days": ("0", "Reject applications older than N days, 0 = disabled (used by reject job)"),
     "proxy_url": ("", "Optional rotating proxy for scraping"),
-    "max_jobs_per_scrape": ("50", "Max results per source per search per run"),
     "dashboard_api_key": ("", "Dashboard password — changeable from dashboard"),
-    "company_domains": (json.dumps([
-        "microsoft.com", "salesforce.com", "servicenow.com", "workday.com",
-        "paypal.com", "jpmorganchase.com", "jpmorgan.com", "blackrock.com",
-        "addepar.com", "oracle.com", "intuit.com", "google.com", "amazon.com",
-        "stripe.com", "visa.com", "mastercard.com", "uber.com", "block.xyz",
-        "plaid.com", "clearstreet.io", "simcorp.com", "cisco.com", "ibm.com",
-        "meta.com", "apple.com", "databricks.com", "coinbase.com", "bloomberg.net",
-        "robinhood.com", "affirm.com", "kraken.com", "chime.com", "ramp.com",
-        "brex.com", "rippling.com"
-    ]), "Known company email domains for Gmail detection"),
-    "ats_domains": (json.dumps([
-        "greenhouse.io", "lever.co", "workday.com", "taleo.net",
-        "icims.com", "myworkdayjobs.com"
-    ]), "ATS domains"),
     "default_resume_id": ("", "Default base Resume ID used for scoring when no company-level Resumes are configured"),
     "company_exclude_global": (json.dumps([]), "Global company ignore list — applies to all searches"),
     "title_exclude_global": (json.dumps([]), "Global title exclude keywords — applies to all searches and companies"),
@@ -452,6 +437,12 @@ def cleanup_removed_settings(db):
         "h1b_exclusion_phrases",
         "language_exclude_phrases",
         "default_cv_id",
+        # Orphaned 2026-06: seeded but read by no code. max_jobs_per_scrape
+        # promised a per-run cap nothing enforced (sources use results_wanted /
+        # max_pages); company_domains/ats_domains were a retired Gmail-detection design.
+        "max_jobs_per_scrape",
+        "company_domains",
+        "ats_domains",
     ]
     for key in removed_keys:
         row = db.query(Setting).filter(Setting.key == key).first()

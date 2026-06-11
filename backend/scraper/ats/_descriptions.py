@@ -3,10 +3,6 @@
 _fetch_description_ats is a dispatcher that tries each supported ATS's description
 API (Oracle HCM ById, Workday JSON, Lever, Greenhouse, etc.) before falling back to
 generic HTML extraction via _fetch_job_description.
-
-During Phase 2 of the refactor this module pulls ATS-specific helpers from
-their dedicated modules (ats/workday, ats/oracle_hcm, ...). Remaining imports
-will be updated in Tasks 12-15 as each ATS module is created.
 """
 import asyncio
 import functools
@@ -55,7 +51,6 @@ def _resolve_branded_greenhouse_slug(host: str) -> str | None:
     host = host.lower()
     # Lazy import to avoid circular imports during module init.
     from backend.models.db import SessionLocal, Company
-    from urllib.parse import urlparse as _urlparse
     db = SessionLocal()
     try:
         # Build {host: slug} from companies that have a Greenhouse scrape_url.
@@ -63,9 +58,9 @@ def _resolve_branded_greenhouse_slug(host: str) -> str | None:
         for c in db.query(Company).all():
             slug = None
             for u in (c.scrape_urls or []):
-                u_host = (_urlparse(u).hostname or "").lower()
+                u_host = (urlparse(u).hostname or "").lower()
                 if u_host in ("job-boards.greenhouse.io", "boards.greenhouse.io"):
-                    parts = [p for p in _urlparse(u).path.strip("/").split("/") if p]
+                    parts = [p for p in urlparse(u).path.strip("/").split("/") if p]
                     if parts:
                         slug = parts[0]
                         break
@@ -73,7 +68,7 @@ def _resolve_branded_greenhouse_slug(host: str) -> str | None:
                 continue
             # Match if the requested host appears in the company's other scrape_urls.
             for u in (c.scrape_urls or []):
-                u_host = (_urlparse(u).hostname or "").lower()
+                u_host = (urlparse(u).hostname or "").lower()
                 if u_host == host:
                     return slug
             # Best-effort: derive candidate company-domain keys from name and check
@@ -125,7 +120,6 @@ async def _fetch_job_description(url: str) -> str | None:
 
     # Generic HTML fallback
     try:
-        from bs4 import BeautifulSoup
         resp = await safe_get(url, timeout=15, headers={"User-Agent": _USER_AGENT})
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -135,7 +129,6 @@ async def _fetch_job_description(url: str) -> str | None:
         if len(text) < 100:
             return None
         # Detect SPA garbage: JSON config blobs from JS-rendered pages
-        import re
         # Check first 500 non-title chars for JSON object start
         body = text[text.index('\n'):] if '\n' in text[:200] else text
         body_start = body.lstrip()[:500]
@@ -158,16 +151,13 @@ async def _fetch_job_description(url: str) -> str | None:
 
 async def _fetch_description_ats(url: str) -> str | None:
     """Try ATS-specific APIs to get job description. Returns plaintext or None."""
-    import json
-    from bs4 import BeautifulSoup
-    from urllib.parse import urlparse as _urlparse
 
     # Lazy imports for helpers still in playwright_scraper.py (avoid circular imports).
     # These will move into ats/ modules in Tasks 7-15.
     from backend.scraper.ats.oracle_hcm import _oracle_hcm_host
     from backend.scraper.ats.workday import _parse_workday_url, _LOCALE_PATH_RE
 
-    parsed = _urlparse(url)
+    parsed = urlparse(url)
 
     # ── Oracle HCM: /sites/{site}/job/{id} ──
     # Detail API: ById finder with quoted Id (%22 = ")
@@ -264,8 +254,7 @@ async def _fetch_description_ats(url: str) -> str | None:
 
     # ── Apple: jobs.apple.com/en-us/details/{id}/... ──
     if _host_matches(url, "jobs.apple.com") and "/details/" in url:
-        import re as _re
-        m = _re.search(r'/details/(\d+)', url)
+        m = re.search(r'/details/(\d+)', url)
         if m:
             apple_job_id = m.group(1)
             api_url = f"https://jobs.apple.com/api/v1/jobDetails/{apple_job_id}"
@@ -308,12 +297,11 @@ async def _fetch_description_ats(url: str) -> str | None:
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 })
                 if resp.status_code == 200:
-                    import html as _html
                     ld_match = re.search(r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', resp.text, re.DOTALL)
                     if ld_match:
                         ld_data = json.loads(ld_match.group(1))
                         if ld_data.get("description"):
-                            desc_html = _html.unescape(ld_data["description"])
+                            desc_html = _html_module.unescape(ld_data["description"])
                             soup = BeautifulSoup(desc_html, "html.parser")
                             text = soup.get_text(separator="\n", strip=True)
                             if len(text) >= 50:
@@ -575,8 +563,7 @@ async def _fetch_description_ats(url: str) -> str | None:
                     data = json.loads(resp.text)
                     content_html = data.get("content", "")
                     if content_html:
-                        import html as _html
-                        content_html = _html.unescape(_html.unescape(content_html))
+                        content_html = _html_module.unescape(_html_module.unescape(content_html))
                         soup = BeautifulSoup(content_html, "html.parser")
                         text = soup.get_text(separator="\n", strip=True)
                         if len(text) >= 50:

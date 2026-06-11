@@ -23,7 +23,6 @@ def is_phenom(url: str) -> bool:
 
 def _parse_phenom_url(raw: str) -> tuple[str, dict]:
     """Parse 'POST|https://host/widgets|{json payload}' format."""
-    import json
     parts = raw.strip().split("|", 2)
     endpoint = parts[1].strip()
     if len(parts) > 2:
@@ -37,7 +36,6 @@ def _parse_phenom_url(raw: str) -> tuple[str, dict]:
 
 async def scrape(raw_url: str, debug: bool = False) -> list[dict] | tuple:
     """Fetch jobs from a Phenom People /widgets POST API."""
-    import json
     endpoint, base_payload = _parse_phenom_url(raw_url)
     parsed = urlparse(endpoint)
     origin = f"{parsed.scheme}://{parsed.netloc}"

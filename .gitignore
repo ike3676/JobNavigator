@@ -152,3 +152,4 @@ docker-compose.test.yml
 # git worktrees (isolated feature branches)
 .worktrees/
 resumes-example/
+.full-review/

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import api from '../api'
 import { Plus, Edit2, X, Play, Loader2, ExternalLink, Camera, Power, PowerOff, Tags, FlaskConical } from 'lucide-react'
 
-const TIER_LABELS = { 1: 'Tier 1', 2: 'Tier 2', 3: 'Tier 3' }
 const TIER_COLORS = { 1: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300', 2: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300', 3: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300' }
 
 const ATS_TYPES = [
@@ -126,10 +125,6 @@ function editorToUrls(items) {
   return items.map(i => i.url).filter(Boolean)
 }
 
-// Legacy helpers
-const urlsToText = (urls) => (urls || []).join('\n')
-const textToUrls = (text) => text.split('\n').map(s => s.trim()).filter(Boolean)
-
 export default function CompanyManager() {
   const [companies, setCompanies] = useState([])
   const [resumes, setResumes] = useState([])
@@ -186,8 +181,6 @@ export default function CompanyManager() {
       if (payload.scrape_urls_editor) {
         payload.scrape_urls = editorToUrls(payload.scrape_urls_editor)
         delete payload.scrape_urls_editor
-      } else if (typeof payload.scrape_urls === 'string') {
-        payload.scrape_urls = textToUrls(payload.scrape_urls)
       }
       // Convert empty string interval to null
       if (payload.scrape_interval_minutes === '' || payload.scrape_interval_minutes === null) {
@@ -259,16 +252,6 @@ export default function CompanyManager() {
       await api.post(`/scrape/company/${companyId}`)
     } catch (e) { console.error(e) }
     setTimeout(() => setScraping(null), 3000)
-  }
-
-  // CV multi-select toggle helper
-  const toggleCvSelection = (cvId, currentIds, setter) => {
-    const ids = currentIds || []
-    if (ids.includes(cvId)) {
-      setter(ids.filter(id => id !== cvId))
-    } else {
-      setter([...ids, cvId])
-    }
   }
 
   const filtered = filterTiers.length === 0
