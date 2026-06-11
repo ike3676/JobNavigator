@@ -333,7 +333,7 @@ export default function Stats() {
   const statCards = stats ? [
     { label: 'Total Jobs', value: stats.total_jobs, color: 'bg-blue-500' },
     { label: 'New Jobs', value: stats.new_jobs, color: 'bg-green-500' },
-    { label: 'Saved', value: stats.saved_jobs, color: 'bg-indigo-500' },
+    { label: 'Saved Jobs', value: stats.saved_jobs, color: 'bg-indigo-500' },
     { label: 'Total Applications', value: stats.total_applications, color: 'bg-purple-500' },
     // Active = applications still in play (not rejected / ghosted / withdrawn).
     { label: 'Active Applications', value: (() => {
