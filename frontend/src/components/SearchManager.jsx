@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import api from '../api'
 import { Plus, Play, Trash2, Edit2, Check, X, FlaskConical, ExternalLink, Loader2 } from 'lucide-react'
 
@@ -45,6 +45,9 @@ export default function SearchManager() {
   const [testing, setTesting] = useState(null)
   const [testResult, setTestResult] = useState(null)
   const [testFilter, setTestFilter] = useState('all')
+  // Unmount guard for the long-running test-scrape poll loop
+  const mountedRef = useRef(true)
+  useEffect(() => () => { mountedRef.current = false }, [])
 
   const fetchSearches = async () => {
     try {
@@ -133,33 +136,44 @@ export default function SearchManager() {
     try {
       const { data, status } = await api.post(`/searches/${id}/test`, null, { timeout: 30000 })
       if (status === 202 && data.run_id) {
-        // Async mode — poll for results
+        // Async mode — poll for results. Capped: 100 × 3s = 5 min, generous for
+        // slow scrape tests (LinkedIn Personal can take minutes). Unmount guard
+        // so navigating away mid-test doesn't setState on an unmounted component.
         const runId = data.run_id
-        while (true) {
+        const MAX_POLLS = 100
+        let resolved = false
+        for (let attempt = 0; attempt < MAX_POLLS; attempt++) {
           await new Promise(r => setTimeout(r, 3000))
+          if (!mountedRef.current) return
           try {
             const poll = await api.get(`/searches/test-result/${runId}`, { timeout: 10000 })
+            if (!mountedRef.current) return
             if (poll.status === 200) {
               setTestResult(poll.data)
+              resolved = true
               break
             }
             // 202 = still running, continue polling
           } catch (pollErr) {
+            if (!mountedRef.current) return
             if (pollErr.response?.status === 404) {
               setTestResult({ error: 'Test run expired or not found' })
+              resolved = true
               break
             }
             // Network error during poll — keep trying
           }
         }
+        if (!resolved) setTestResult({ error: 'Test timed out after 5 minutes — check Stats > Run History' })
       } else {
         // Sync mode (keyword) — result returned directly
         setTestResult(data)
       }
     } catch (e) {
+      if (!mountedRef.current) return
       setTestResult({ error: e.response?.data?.detail || e.message })
     }
-    setTesting(null)
+    if (mountedRef.current) setTesting(null)
   }
 
   const getFilteredJobs = () => {

@@ -7,7 +7,6 @@ export default function SettingsPage() {
   const [resumes, setResumes] = useState([])
   const [personaPopulated, setPersonaPopulated] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [triggerStatus, setTriggerStatus] = useState({})
   const [showPw, setShowPw] = useState({})
@@ -37,14 +36,14 @@ export default function SettingsPage() {
   }, [])
 
   const saveSetting = async (key, value) => {
-    setSaving(true)
     try {
       await api.patch('/settings', { [key]: value })
-      setSettings({ ...settings, [key]: value })
+      // Functional update — a plain {...settings} spread here would snapshot
+      // pre-await state and revert any field edited during the request.
+      setSettings(prev => ({ ...prev, [key]: value }))
       setMessage('Setting saved')
       setTimeout(() => setMessage(''), 2000)
     } catch (e) { console.error(e) }
-    setSaving(false)
   }
 
   const saveApiKey = async () => {
@@ -59,14 +58,14 @@ export default function SettingsPage() {
     }
   }
 
-  const triggerAction = async (endpoint, label) => {
-    setTriggerStatus({ ...triggerStatus, [endpoint]: 'running' })
+  const triggerAction = async (endpoint) => {
+    setTriggerStatus(prev => ({ ...prev, [endpoint]: 'running' }))
     try {
       await api.post(endpoint)
-      setTriggerStatus({ ...triggerStatus, [endpoint]: 'done' })
+      setTriggerStatus(prev => ({ ...prev, [endpoint]: 'done' }))
       setTimeout(() => setTriggerStatus(prev => ({ ...prev, [endpoint]: '' })), 3000)
     } catch (e) {
-      setTriggerStatus({ ...triggerStatus, [endpoint]: 'error' })
+      setTriggerStatus(prev => ({ ...prev, [endpoint]: 'error' }))
     }
   }
 
@@ -1230,7 +1229,7 @@ export default function SettingsPage() {
             { endpoint: '/h1b/refresh', label: 'Refresh H-1B Data', icon: RefreshCw },
             { endpoint: '/telegram/test', label: 'Send Test Telegram', icon: Send },
           ].map(({ endpoint, label, icon: Icon }) => (
-            <button key={endpoint} onClick={() => triggerAction(endpoint, label)}
+            <button key={endpoint} onClick={() => triggerAction(endpoint)}
               disabled={triggerStatus[endpoint] === 'running'}
               className={`flex items-center justify-center gap-2 px-3 py-2 text-sm border dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200 ${
                 triggerStatus[endpoint] === 'running' ? 'opacity-50' : ''

@@ -22,7 +22,7 @@ const STATUS_COLORS = {
 
 const DEFAULT_FILTERS = {
   status: ['new'], company: [], min_score: '', h1b_verdict: [],
-  source: [], saved: '',
+  source: [],
 }
 
 function loadFilters() {
@@ -161,7 +161,6 @@ export default function JobFeed() {
       if (filters.source.length) params.source = filters.source.join(',')
       if (filters.h1b_verdict.length) params.h1b_verdict = filters.h1b_verdict.join(',')
       if (filters.min_score !== '') params.min_score = filters.min_score
-      if (filters.saved !== '') params.saved = filters.saved
       if (debouncedTitleSearch) params.title_search = debouncedTitleSearch
 
       if (minSalary) params.min_salary = Number(minSalary) * 1000
@@ -174,7 +173,6 @@ export default function JobFeed() {
       if (filters.company.length) srcParams.company = filters.company.join(',')
       if (filters.h1b_verdict.length) srcParams.h1b_verdict = filters.h1b_verdict.join(',')
       if (filters.min_score !== '') srcParams.min_score = filters.min_score
-      if (filters.saved !== '') srcParams.saved = filters.saved
       if (debouncedTitleSearch) srcParams.title_search = debouncedTitleSearch
 
       if (minSalary) srcParams.min_salary = Number(minSalary) * 1000
@@ -187,7 +185,6 @@ export default function JobFeed() {
       if (filters.company.length) vParams.company = filters.company.join(',')
       if (filters.source.length) vParams.source = filters.source.join(',')
       if (filters.min_score !== '') vParams.min_score = filters.min_score
-      if (filters.saved !== '') vParams.saved = filters.saved
       if (debouncedTitleSearch) vParams.title_search = debouncedTitleSearch
 
       if (minSalary) vParams.min_salary = Number(minSalary) * 1000
@@ -196,7 +193,7 @@ export default function JobFeed() {
       api.get('/jobs/verdicts/list', { params: vParams }).then(({ data }) => setVerdictList(data)).catch(() => {})
     }, 300)
     return () => { if (filterTimerRef.current) clearTimeout(filterTimerRef.current) }
-  }, [filters.status, filters.source, filters.company, filters.h1b_verdict, filters.min_score, filters.saved, debouncedTitleSearch, minSalary, maxSalary])
+  }, [filters.status, filters.source, filters.company, filters.h1b_verdict, filters.min_score, debouncedTitleSearch, minSalary, maxSalary])
 
   // Auto-clear stale filter values not present in dynamic lists
   useEffect(() => {
@@ -236,7 +233,6 @@ export default function JobFeed() {
       if (filters.source.length) params.source = filters.source.join(',')
       if (filters.h1b_verdict.length) params.h1b_verdict = filters.h1b_verdict.join(',')
       if (filters.min_score !== '') params.min_score = filters.min_score
-      if (filters.saved !== '') params.saved = filters.saved
       if (debouncedTitleSearch) params.title_search = debouncedTitleSearch
       if (sortBy !== 'date') params.sort_by = sortBy
 
@@ -325,8 +321,11 @@ export default function JobFeed() {
         if (now > w.until) continue  // give up after 60s
         try {
           const { data: jobData } = await api.get(`/jobs/${w.id}`)
+          // Done when cv_scores populates (real scores or the _skipped sentinel).
+          // Note: the API's best_score is always numeric (0 default) — not usable
+          // as a "scoring finished" signal.
           const scored = jobData.cv_scores && Object.keys(jobData.cv_scores).length > 0
-          if (scored || jobData.best_cv_score != null) {
+          if (scored) {
             setJobs(prev => prev.map(j => j.id === w.id ? jobData : j))
             setSelectedJob(prev => prev && prev.id === w.id ? jobData : prev)
           } else {
@@ -1169,17 +1168,10 @@ export default function JobFeed() {
         <div className="fixed bottom-16 right-4 flex flex-col gap-2 z-50">
           {tailorToasts.map(t => (
             <div key={t.id} className={`rounded-lg px-4 py-3 flex items-center gap-3 shadow-xl text-white text-sm ${
-              t.status === 'loading' || t.status === 'running' ? 'bg-gray-800' : t.status === 'success' ? 'bg-green-700' : 'bg-red-700'
+              t.status === 'loading' || t.status === 'running' ? 'bg-gray-800' : 'bg-red-700'
             }`}>
               {t.status === 'loading' && <><Loader2 size={14} className="animate-spin flex-shrink-0" /> Tailoring CV for {t.company}...</>}
               {t.status === 'running' && <><Loader2 size={14} className="animate-spin flex-shrink-0" /> Tailoring CV for {t.company} in background...</>}
-              {t.status === 'success' && (
-                <>
-                  <CheckCircle size={14} className="flex-shrink-0" />
-                  <span>Tailored CV ready for {t.company}</span>
-                  <a href={`/resumes?resume=${t.resumeId}`} className="text-green-200 hover:text-white font-medium underline">View</a>
-                </>
-              )}
               {t.status === 'error' && (
                 <>
                   <Ban size={14} className="flex-shrink-0" />
