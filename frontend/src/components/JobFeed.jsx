@@ -59,6 +59,9 @@ export default function JobFeed() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const [jobs, setJobs] = useState([])
+  // Jobs we just saved — watch their /jobs/{id} until the (background, untracked)
+  // save-triggered score lands, then patch it into the feed without a manual refresh.
+  const scoreWatchRef = useRef([])  // [{ id, until }]
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState(loadFilters)
@@ -301,6 +304,42 @@ export default function JobFeed() {
   }, [jobs.map(j => (j.in_flight || []).length > 0 ? j.id : null).filter(Boolean).join(',')])
   // Re-subscribe only when the set of active IDs actually changes
 
+  // Watch freshly-saved jobs for their score (save-triggered scoring runs as an
+  // untracked FastAPI background task, so it never shows in /monitor/in-flight).
+  // Poll each watched job's /jobs/{id} until cv_scores populates, then patch it in.
+  const watchForScore = useCallback((id) => {
+    if (!id) return
+    if (scoreWatchRef.current.some(w => w.id === id)) return
+    scoreWatchRef.current = [...scoreWatchRef.current, { id, until: Date.now() + 60000 }]
+  }, [])
+  const watchForScoreRef = useRef(watchForScore)
+  useEffect(() => { watchForScoreRef.current = watchForScore }, [watchForScore])
+
+  useEffect(() => {
+    const tick = async () => {
+      const watching = scoreWatchRef.current
+      if (watching.length === 0) return
+      const now = Date.now()
+      const stillWatching = []
+      for (const w of watching) {
+        if (now > w.until) continue  // give up after 60s
+        try {
+          const { data: jobData } = await api.get(`/jobs/${w.id}`)
+          const scored = jobData.cv_scores && Object.keys(jobData.cv_scores).length > 0
+          if (scored || jobData.best_cv_score != null) {
+            setJobs(prev => prev.map(j => j.id === w.id ? jobData : j))
+            setSelectedJob(prev => prev && prev.id === w.id ? jobData : prev)
+          } else {
+            stillWatching.push(w)
+          }
+        } catch { stillWatching.push(w) }
+      }
+      scoreWatchRef.current = stillWatching
+    }
+    const handle = setInterval(tick, 3000)
+    return () => clearInterval(handle)
+  }, [])
+
   // Deep-link: ?job=<id> opens that job's detail panel
   useEffect(() => {
     const jobId = searchParams.get('job')
@@ -362,6 +401,7 @@ export default function JobFeed() {
           // Advance to next job immediately
           if (idx + 1 < currentJobs.length) selectJobAt(idx + 1)
           api.patch(`/jobs/${job.id}`, { saved: newSaved, status: newStatus }).then(() => {
+            if (newSaved && !(job.cv_scores && Object.keys(job.cv_scores).length)) watchForScoreRef.current(job.id)
             fetchJobsRef.current()
           }).catch(console.error)
           break
@@ -524,7 +564,9 @@ export default function JobFeed() {
     e.stopPropagation()
     advanceToNext(job)
     try {
-      await api.patch(`/jobs/${job.id}`, { saved: !job.saved, status: job.saved ? 'new' : 'saved' })
+      const willSave = !job.saved
+      await api.patch(`/jobs/${job.id}`, { saved: willSave, status: job.saved ? 'new' : 'saved' })
+      if (willSave && !(job.cv_scores && Object.keys(job.cv_scores).length)) watchForScore(job.id)
       fetchJobs()
     } catch (e) { console.error(e) }
   }
@@ -620,8 +662,15 @@ export default function JobFeed() {
   const bulkAction = async (action) => {
     if (selectedIds.size === 0) return
     try {
+      const ids = [...selectedIds]
       const updates = action === 'skip' ? { status: 'skip' } : { saved: true, status: 'saved' }
-      await api.post('/jobs/bulk-update', { job_ids: [...selectedIds], updates })
+      await api.post('/jobs/bulk-update', { job_ids: ids, updates })
+      if (action !== 'skip') {
+        ids.forEach(id => {
+          const j = jobs.find(x => x.id === id)
+          if (!(j && j.cv_scores && Object.keys(j.cv_scores).length)) watchForScore(id)
+        })
+      }
       setSelectedIds(new Set())
       fetchJobs()
     } catch (e) { console.error(e) }
