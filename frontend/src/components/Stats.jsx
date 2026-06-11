@@ -334,9 +334,9 @@ export default function Stats() {
     { label: 'Total Jobs', value: stats.total_jobs, color: 'bg-blue-500' },
     { label: 'New Jobs', value: stats.new_jobs, color: 'bg-green-500' },
     { label: 'Saved', value: stats.saved_jobs, color: 'bg-indigo-500' },
-    { label: 'Applications', value: stats.total_applications, color: 'bg-purple-500' },
+    { label: 'Total Applications', value: stats.total_applications, color: 'bg-purple-500' },
     // Active = applications still in play (not rejected / ghosted / withdrawn).
-    { label: 'Active', value: (() => {
+    { label: 'Active Applications', value: (() => {
         const s = stats.application_statuses || {}
         const closed = (s.rejected || 0) + (s.ghosted || 0) + (s.withdrawn || 0)
         return Math.max(0, (stats.total_applications || 0) - closed)
