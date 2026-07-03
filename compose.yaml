@@ -28,7 +28,7 @@ services:
       DATABASE_URL: postgresql://jobnavigator:password@db:5432/jobnavigator
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
     ports:
-      - "6890:8000"
+      - "8000:8000"
     networks:
       - npm_net
     depends_on:
@@ -51,24 +51,24 @@ services:
     depends_on:
       - backend
 
-#  caddy:
-#    image: caddy:2-alpine
-#    restart: unless-stopped
-#    ports:
-#      - "80:80"
-#      - "443:443"
-#    volumes:
-#      - ./Caddyfile:/etc/caddy/Caddyfile
-#      - caddy_data:/data
-#      - caddy_config:/config
-#    depends_on:
-#      - backend
-#      - frontend
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "6790:80"
+      - "6795:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
 networks:
   npm_net:
     name: npm_net
     external: true
 volumes:
   jobnav_pgdata:
- # caddy_data:
- # caddy_config:
+  caddy_data:
+  caddy_config:
