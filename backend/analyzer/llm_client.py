@@ -285,7 +285,8 @@ async def _call_ollama(prompt: str, system: str, model: str, max_tokens: int) ->
     import httpx
     async with httpx.AsyncClient(timeout=120) as client:
         response = await client.post(
-            "http://192.168.68.50:11434/api/generate",
+            "https://ollama.drburnett.net",
+            headers={'Authorization': 'Bearer ua9e2UvNGn9f7PVLpaVto1y1ap4dEpYKdBCcbtRz'}
             json={
                 "model": model,
                 "prompt": prompt,
