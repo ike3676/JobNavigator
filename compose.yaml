@@ -46,8 +46,6 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-    networks:
-      - npm_net
     depends_on:
       - backend
     networks:
