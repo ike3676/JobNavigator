@@ -9,7 +9,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U jobnavigator"]
       interval: 5s
@@ -26,7 +26,9 @@ services:
       DATABASE_URL: postgresql://jobnavigator:${POSTGRES_PASSWORD:-password}@db:5432/jobnavigator
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
     ports:
-      - "8000:8000"
+      - "6890:8000"
+    networks:
+      - npm_net
     depends_on:
       db:
         condition: service_healthy
@@ -41,25 +43,30 @@ services:
       dockerfile: Dockerfile.frontend
     restart: unless-stopped
     ports:
-      - "3000:80"
+      - "6790:80"
+    networks:
+      - npm_net
     depends_on:
       - backend
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - backend
-      - frontend
-
+#  caddy:
+#    image: caddy:2-alpine
+#    restart: unless-stopped
+#    ports:
+#      - "80:80"
+#      - "443:443"
+#    volumes:
+#      - ./Caddyfile:/etc/caddy/Caddyfile
+#      - caddy_data:/data
+#      - caddy_config:/config
+#    depends_on:
+#      - backend
+#      - frontend
+networks:
+  npm_net:
+    name: npm_net
+    external: true
 volumes:
-  pgdata:
-  caddy_data:
-  caddy_config:
+  jobnav_pgdata:
+ # caddy_data:
+ # caddy_config:
