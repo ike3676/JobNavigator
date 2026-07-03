@@ -152,25 +152,23 @@ async def call_cover_letter_llm(prompt: str, system: str, max_tokens: int = 1500
 async def _dispatch(provider: str, model: str, api_key: str, base_url: str,
                     prompt: str, system: str, max_tokens: int,
                     cached_prefix: str | None = None) -> dict:
-    """Route to the correct provider. All providers return {text, usage} dict.
-
-    Only `claude_api` supports Anthropic prompt caching — for other providers the
-    cached_prefix is concatenated into the prompt so the full content still reaches
-    the model (without the cache discount).
-    """
+    """Route to the correct provider. All providers return {text, usage} dict."""
     if provider == "claude_api":
         return await _call_claude_api(prompt, system, model, api_key, max_tokens, cached_prefix=cached_prefix)
+    
     combined = f"{cached_prefix}\n\n{prompt}" if cached_prefix else prompt
+    
     if provider == "claude_code":
         return await _call_claude_code(combined, system, model, max_tokens)
     elif provider == "openai":
         return await _call_openai(combined, system, model, api_key, max_tokens)
     elif provider == "ollama":
-        return await _call_ollama(combined, system, model, max_tokens)
+        # Pass api_key and base_url to Ollama handler so it can authenticate through Nginx
+        return await _call_ollama(combined, system, model, api_key, base_url)
     elif provider == "openai_compat":
-        return await _call_openai(combined, system, model, api_key, max_tokens, base_url=base_url)
-    else:
-        raise ValueError(f"Unknown LLM provider: {provider}")
+        return await _call_openai_compat(combined, system, model, api_key, base_url, max_tokens)
+
+    raise ValueError(f"Unknown provider: {provider}")
 
 
 async def _call_claude_api(prompt: str, system: str, model: str, api_key: str,
@@ -280,29 +278,34 @@ async def _call_openai(prompt: str, system: str, model: str, api_key: str, max_t
     }
 
 
-async def _call_ollama(prompt: str, system: str, model: str, max_tokens: int) -> dict:
-    """Call local Ollama instance. Returns {text, usage}."""
-    import httpx
-    async with httpx.AsyncClient(timeout=120) as client:
-        response = await client.post(
-            "https://ollama.drburnett.net",
-            headers={'Authorization': 'Bearer ua9e2UvNGn9f7PVLpaVto1y1ap4dEpYKdBCcbtRz'}
-            json={
-                "model": model,
-                "prompt": prompt,
-                "system": system,
-                "stream": False,
-                "options": {"num_predict": max_tokens},
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
+async def _call_ollama(prompt: str, system: str, model: str, api_key: str, base_url: str) -> dict:
+    """Calls Ollama asynchronously through your secure Nginx proxy using custom Bearer headers."""
+    import ollama
+    
+    # Configure custom routing and security headers
+    client_options = {}
+    if base_url:
+        client_options['host'] = base_url
+    if api_key:
+        client_options['headers'] = {'Authorization': f'Bearer {api_key}'}
+        
+    # Create an async client instance with the authentication headers
+    async_client = ollama.AsyncClient(**client_options)
+    
+    # Make the API call matching Ollama's expected format
+    response = await async_client.generate(
+        model=model,
+        system=system,
+        prompt=prompt,
+        stream=False
+    )
+    
+    # Standardize output format to match your database tracking
     return {
-        "text": data["response"].strip(),
+        "text": response.get("response", ""),
         "usage": {
-            "input_tokens": data.get("prompt_eval_count", 0),
-            "output_tokens": data.get("eval_count", 0),
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
-        },
+            "prompt_tokens": response.get("prompt_eval_count", 0),
+            "completion_tokens": response.get("eval_count", 0),
+            "total_tokens": response.get("prompt_eval_count", 0) + response.get("eval_count", 0)
+        }
     }
