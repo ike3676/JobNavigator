@@ -45,18 +45,17 @@ services:
       dockerfile: Dockerfile.frontend
     restart: unless-stopped
     ports:
-      - "6790:80"
+      - "3000:80"
     depends_on:
       - backend
     networks:
       - jobnav_net
-      - npm_net
 
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "6790:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
@@ -67,6 +66,7 @@ services:
       - frontend
     networks:
       - jobnav_net
+      - npm_net
 networks:
   npm_net:
     name: npm_net
