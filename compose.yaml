@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
       POSTGRES_DB: jobnavigator
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - jobnav_pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
