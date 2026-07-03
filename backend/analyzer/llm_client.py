@@ -285,7 +285,7 @@ async def _call_ollama(prompt: str, system: str, model: str, max_tokens: int) ->
     import httpx
     async with httpx.AsyncClient(timeout=120) as client:
         response = await client.post(
-            "http://ollama:11434/api/generate",
+            "http://192.168.68.50:11434/api/generate",
             json={
                 "model": model,
                 "prompt": prompt,
